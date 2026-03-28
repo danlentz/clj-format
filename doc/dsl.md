@@ -1,371 +1,478 @@
 # clj-format DSL Reference
 
-This document describes the s-expression DSL that clj-format compiles into
-`cl-format` format strings. The DSL uses vectors, keywords, maps, and strings
-to represent the full range of cl-format directives in a readable way.
+A complete definition of the s-expression DSL that clj-format compiles into
+cl-format format strings. Covers all 33 cl-format directives.
 
-## Principles
+## Structure
 
-- **Semantic naming:** Keywords describe intent, not cl-format mechanics
-- **Bare keywords:** `:str` in a body is shorthand for `[:str]`
-- **Strings are literal text:** `"hello"` emits itself verbatim
-- **Options map always last:** `[:keyword body opts]` or `[:keyword opts]`
-- **Transparent passthrough:** String format specs go directly to `cl-format`
+A format specification is a **body** — a vector of **elements**. Each
+element is one of:
 
-## Output
+- **string** — literal text, emitted verbatim (`"hello"` → `hello`)
+- **bare keyword** — a directive with no options (`:str` → `~A`)
+- **directive vector** — `[:keyword opts]` (simple) or `[:keyword opts & body]` (compound)
 
-### `:str` — Print argument (`~A`)
-
-```clojure
-:str                                  ;; ~A
-[:str {:width 10}]                    ;; ~10A
-[:str {:width 10 :pad :left}]         ;; ~10@A
-[:str {:width 10 :fill \0}]           ;; ~10,1,0,'0A
-```
-
-Options: `:width`, `:pad-step`, `:min-pad`, `:fill`, `:pad` (`:left`/`:right`)
-
-### `:pr` — Print readable (`~S`)
-
-Same options as `:str`. Prints with quotes, escape characters, etc.
+The vector form follows the **Hiccup convention**: if the second element is
+a map, it is the options map; everything after is the body/children.
 
 ```clojure
-:pr                                   ;; ~S
-[:pr {:width 20 :pad :left}]          ;; ~20@S
+;; Bare keyword — no options
+:str                              ;; ~A
+
+;; Directive with options
+[:str {:width 10}]                ;; ~10A
+
+;; Compound directive: keyword, opts, then body elements
+[:each {:sep ", "} :str]          ;; ~{~A~^, ~}
+
+;; Mixed body
+["Name: " :str ", Age: " :int]   ;; Name: ~A, Age: ~D
 ```
 
-### `:write` — Pretty-print (`~W`)
+### Special Parameter Values
+
+Anywhere an option accepts a numeric or character value, two special values
+are also accepted:
+
+- `:V` — take the value from the next format argument at runtime
+- `:#` — use the count of remaining format arguments
 
 ```clojure
-:write                                ;; ~W
-[:write {:pretty true}]               ;; ~:W
-[:write {:full true}]                 ;; ~@W
+[:str {:width :V}]                ;; ~vA  — width from arg
+[:str {:width :#}]                ;; ~#A  — width = remaining arg count
 ```
 
-### `:char` — Character (`~C`)
+## Directive Reference
+
+### Output
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:str` | `~A` | Print argument (human-readable, no quotes) |
+| `:pr` | `~S` | Print argument (readable form, with quotes) |
+| `:write` | `~W` | Print via pprint `write` |
+| `:char` | `~C` | Print a character |
+
+**`:str` and `:pr` options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:width` | integer | 0 | Minimum column width |
+| `:pad-step` | integer | 1 | Padding column increment |
+| `:min-pad` | integer | 0 | Minimum padding characters |
+| `:fill` | char | space | Padding character |
+| `:pad` | `:left` | `:right` | Padding direction (`:left` = right-align) |
+
+**`:write` options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:pretty` | boolean | Enable pretty-printing |
+| `:full` | boolean | Ignore `*print-level*` and `*print-length*` |
+
+**`:char` options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:format` | `:name` / `:readable` | `:name` = "Space"; `:readable` = `\space` |
+
+### Integers
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:int` | `~D` | Decimal |
+| `:bin` | `~B` | Binary |
+| `:oct` | `~O` | Octal |
+| `:hex` | `~X` | Hexadecimal |
+
+All four share the same options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:width` | integer | 0 | Minimum column width |
+| `:fill` | char | space | Padding character |
+| `:group` | boolean | false | Enable digit grouping (e.g., `1,000,000`) |
+| `:sign` | `:always` | nil | Always show `+`/`-` sign |
+| `:group-sep` | char | `,` | Separator character between groups |
+| `:group-size` | integer | 3 | Digits per group |
 
 ```clojure
-:char                                 ;; ~C
-[:char {:format :name}]               ;; ~:C  ("Space", "Newline")
-[:char {:format :readable}]           ;; ~@C  (\x)
+:int                                         ;; ~D
+[:int {:width 8 :fill \0}]                   ;; ~8,'0D
+[:int {:group true :sign :always}]           ;; ~:@D
+[:hex {:width 4 :fill \0}]                   ;; ~4,'0X
+[:bin {:width 8 :fill \0 :group true
+       :group-sep \space :group-size 4}]     ;; ~8,'0,' ,4:B
 ```
 
-## Integers
+### Radix
 
-### `:int` — Decimal (`~D`)
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:radix` | `~nR` | Print in arbitrary base `n` |
+| `:cardinal` | `~R` | English cardinal ("forty-two") |
+| `:ordinal` | `~:R` | English ordinal ("forty-second") |
+| `:roman` | `~@R` | Roman numeral ("XLII") |
+| `:old-roman` | `~:@R` | Old Roman, no subtractive ("XXXXII") |
+
+`:radix` accepts integer options (`:base` plus `:width`, `:fill`, etc.).
+The other four are bare keywords — no options.
 
 ```clojure
-:int                                  ;; ~D
-[:int {:width 8 :fill \0}]            ;; ~8,'0D
-[:int {:group true}]                  ;; ~:D  (1,000,000)
-[:int {:sign :always}]                ;; ~@D  (+42)
-[:int {:group true :group-sep \. :group-size 4}]
+[:radix {:base 16}]              ;; ~16R
+[:radix {:base 2 :width 8 :fill \0}]
+:cardinal                        ;; ~R
+:ordinal                         ;; ~:R
+:roman                           ;; ~@R
+:old-roman                       ;; ~:@R
 ```
 
-Options: `:width`, `:fill`, `:group`, `:sign`, `:group-sep`, `:group-size`
+### Pluralization
 
-### `:bin`, `:oct`, `:hex` — Other bases (`~B`, `~O`, `~X`)
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:plural` | `~P` | Print "s" or "" based on argument |
 
-Same options as `:int`.
+| Option | Type | Description |
+|--------|------|-------------|
+| `:rewind` | boolean | Back up one argument before testing |
+| `:form` | `:ies` | Use "y"/"ies" instead of ""/"s" |
 
 ```clojure
-[:hex {:width 4 :fill \0}]            ;; ~4,'0X
-[:bin {:width 8 :fill \0 :group true}] ;; ~8,'0:B
+:plural                          ;; ~P   "s" or ""
+[:plural {:form :ies}]           ;; ~@P  "y" or "ies"
+[:plural {:rewind true}]         ;; ~:P  back up, then "s" or ""
 ```
 
-### `:radix` — General base (`~nR`)
+### Floating Point
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:float` | `~F` | Fixed-point |
+| `:exp` | `~E` | Exponential notation |
+| `:gfloat` | `~G` | General (auto-selects fixed/exp) |
+| `:money` | `~$` | Monetary (dollars and cents) |
+
+**`:float` options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:width` | integer | nil | Total field width |
+| `:decimals` | integer | nil | Digits after decimal point |
+| `:scale` | integer | 0 | Multiply by 10^scale before printing |
+| `:overflow` | char | nil | Print this char when value overflows width |
+| `:fill` | char | space | Padding character |
+| `:sign` | `:always` | nil | Always show sign |
+
+**`:exp` and `:gfloat` additional options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:exp-digits` | integer | nil | Digits in exponent |
+| `:exp-char` | char | `E` | Exponent marker character |
+
+**`:money` options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:decimals` | integer | 2 | Digits after decimal |
+| `:int-digits` | integer | 1 | Minimum digits before decimal |
+| `:width` | integer | 0 | Minimum total width |
+| `:fill` | char | space | Padding character |
+| `:sign` | `:always` | nil | Always show sign |
+| `:sign-first` | boolean | false | Place sign before padding |
 
 ```clojure
-[:radix {:base 16}]                   ;; ~16R
-[:radix {:base 8 :width 10 :fill \0}] ;; ~8,10,'0R
+[:float {:width 8 :decimals 2}]             ;; ~8,2F
+[:exp {:width 10 :decimals 4 :exp-digits 2}] ;; ~10,4,2E
+[:money {:decimals 2 :sign :always}]         ;; ~2@$
 ```
 
-### `:cardinal`, `:ordinal`, `:roman`, `:old-roman` — English and Roman
+### Layout
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:nl` | `~%` | Emit newline(s) |
+| `:fresh` | `~&` | Emit newline only if not at column 0 |
+| `:page` | `~\|` | Emit page separator (formfeed) |
+| `:tab` | `~T` | Move to column position |
+| `:tilde` | `~~` | Emit literal tilde character(s) |
+
+`:nl`, `:fresh`, `:page`, and `:tilde` accept `{:count n}`.
+
+**`:tab` options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:col` | integer | 1 | Column number (absolute) or spaces (relative) |
+| `:step` | integer | 1 | Column increment for rounding |
+| `:relative` | boolean | false | Relative mode (move forward, not to absolute column) |
 
 ```clojure
-:cardinal                             ;; ~R   "twenty-three"
-:ordinal                              ;; ~:R  "twenty-third"
-:roman                                ;; ~@R  "IV"
-:old-roman                            ;; ~:@R "IIII"
+:nl                              ;; ~%
+[:nl {:count 3}]                 ;; ~3%
+[:tab {:col 20}]                 ;; ~20T
+[:tab {:col 4 :relative true}]  ;; ~4@T
 ```
 
-### `:plural`
+### Navigation
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:skip` | `~*` | Skip forward `n` arguments (default 1) |
+| `:back` | `~:*` | Skip backward `n` arguments (default 1) |
+| `:goto` | `~@*` | Jump to absolute argument position `n` (default 0) |
+| `:recur` | `~?` | Recursive format — next arg is format string, next is arg list |
+
+`:skip`, `:back`, and `:goto` accept `{:n count}`.
+`:recur` accepts `{:from :rest}` to use remaining args instead of a sublist.
 
 ```clojure
-:plural                               ;; ~P   "s"/""
-[:plural {:form :ies}]                ;; ~@P  "y"/"ies"
-[:plural {:rewind true}]              ;; ~:P  back up one arg first
+:skip                            ;; ~*   skip 1
+[:skip {:n 3}]                   ;; ~3*  skip 3
+:back                            ;; ~:*  back up 1
+[:goto {:n 5}]                   ;; ~5@* jump to arg 5
+[:recur {:from :rest}]           ;; ~@?  use remaining args
 ```
 
-## Floating Point
+### Iteration
 
-### `:float` — Fixed format (`~F`)
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:each` | `~{...~}` | Iterate body over arguments |
+
+The body elements follow the keyword and optional opts map (Hiccup convention).
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:sep` | string | nil | Separator between iterations (abstracts `~^sep`) |
+| `:from` | keyword | nil | Argument source (see below) |
+| `:max` | integer | nil | Maximum number of iterations |
+| `:min` | integer | nil | Minimum iterations (1 = execute at least once) |
+
+**`:from` values:**
+
+| Value | cl-format | Description |
+|-------|-----------|-------------|
+| (nil) | `~{` | Iterate over a single list argument |
+| `:rest` | `~@{` | Iterate over remaining arguments |
+| `:sublists` | `~:{` | Each element of the list is a sublist of arguments |
+| `:rest-sublists` | `~:@{` | Remaining args, each is a sublist |
 
 ```clojure
-:float                                ;; ~F
-[:float {:width 8 :decimals 2}]       ;; ~8,2F
-[:float {:width 8 :decimals 2 :sign :always}]  ;; ~8,2@F
+[:each {:sep ", "} :str]                          ;; ~{~A~^, ~}
+[:each {:sep ", " :from :rest} :str]              ;; ~@{~A~^, ~}
+[:each {:from :sublists} :str ": " :int :nl]      ;; ~:{~A: ~D~%~}
+[:each {:max 5} :str ", "]                         ;; ~5{~A, ~}
+[:each {:min 1} :str]                              ;; ~{~A~:}
 ```
 
-Options: `:width`, `:decimals`, `:scale`, `:overflow`, `:fill`, `:sign`
-
-### `:exp` — Exponential (`~E`)
+For complex cases where `:sep` is insufficient, use `:stop` directly in
+the body:
 
 ```clojure
-[:exp {:width 10 :decimals 4}]        ;; ~10,4E
-[:exp {:width 10 :decimals 4 :exp-digits 2}]  ;; ~10,4,2E
+[:each :str :stop " " :str "=\"" :str "\""]       ;; ~{~A~^ ~A="~A"~}
 ```
 
-Additional options: `:exp-digits`, `:exp-char`
+### Conditionals
 
-### `:gfloat` — General float (`~G`)
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:when` | `~@[...~]` | Print body only if argument is truthy |
+| `:if` | `~:[...~;...~]` | Boolean dispatch — true-clause first |
+| `:choose` | `~[...~;...~]` | Numeric dispatch — select clause by index |
 
-Auto-selects between fixed and exponential. Same options as `:exp`.
-
-### `:money` — Monetary (`~$`)
+**`:when`** — body elements are inline:
 
 ```clojure
-:money                                ;; ~$
-[:money {:decimals 2 :int-digits 1 :width 10}]  ;; ~2,1,10$
-[:money {:sign :always}]              ;; ~@$
-[:money {:sign-first true}]           ;; ~:$  sign before padding
+[:when "value: " :str]           ;; ~@[value: ~A~]
 ```
 
-## Layout
-
-### `:nl` — Newline (`~%`)
+**`:if`** — two clauses, true first (opposite of cl-format's false-first
+order). Each clause is a single element: a string, a bare keyword, or a
+multi-element body vector.
 
 ```clojure
-:nl                                   ;; ~%
-[:nl {:count 3}]                      ;; ~3%
+[:if "yes" "no"]                 ;; ~:[no~;yes~]
+[:if :str "none"]                ;; ~:[none~;~A~]
+[:if [:str " found"] "nothing"]  ;; ~:[nothing~;~A found~]
 ```
 
-### `:fresh` — Fresh line (`~&`)
+**`:choose`** — clauses are inline, opts map (if any) in second position.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:default` | element | Default clause when index is out of range |
+| `:selector` | integer/`:V`/`:#` | Override the argument as selector |
 
 ```clojure
-:fresh                                ;; ~&
-[:fresh {:count 2}]                   ;; ~2&
+[:choose "zero" "one" "two"]                     ;; ~[zero~;one~;two~]
+[:choose {:default "other"} "zero" "one" "two"]  ;; ~[zero~;one~;two~:;other~]
+[:choose {:selector :#} "none" "one" "some"]     ;; ~#[none~;one~;some~]
 ```
 
-### `:tab` — Tabulate (`~T`)
+### Case Conversion
+
+Case conversion can be applied two ways:
+
+**As a `:case` option** on any directive (preferred — avoids nesting):
+
+| Value | cl-format | Effect |
+|-------|-----------|--------|
+| `:downcase` | `~(` | all lowercase |
+| `:capitalize` | `~:(` | Capitalize Each Word |
+| `:titlecase` | `~@(` | Capitalize first word only |
+| `:upcase` | `~:@(` | ALL UPPERCASE |
 
 ```clojure
-[:tab {:col 20}]                      ;; ~20T
-[:tab {:col 20 :step 8}]              ;; ~20,8T
-[:tab {:col 4 :relative true}]        ;; ~4@T
+[:str {:case :capitalize}]                   ;; ~:(~A~)
+[:str {:case :upcase}]                       ;; ~:@(~A~)
+[:each {:sep ", " :case :capitalize} :str]   ;; ~:(~{~A~^, ~}~)
+[:roman {:case :downcase}]                   ;; ~(~@R~)
 ```
 
-### `:page` — Page separator (`~|`)
+The parser automatically flattens case conversion into the `:case` option
+when the body contains a single element.
+
+**As compound directives** (for multi-element bodies):
+
+| Keyword | cl-format | Effect |
+|---------|-----------|--------|
+| `:downcase` | `~(` | all lowercase |
+| `:capitalize` | `~:(` | Capitalize Each Word |
+| `:titlecase` | `~@(` | Capitalize first word only |
+| `:upcase` | `~:@(` | ALL UPPERCASE |
 
 ```clojure
-:page                                 ;; ~|
+[:downcase "the " :str " is " :str]         ;; ~(the ~A is ~A~)
+[:capitalize "hello " :str]                  ;; ~:(hello ~A~)
 ```
 
-### `:tilde` — Literal tilde (`~~`)
+### Justification
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:justify` | `~<...~>` | Justify/pad text within a field |
+| `:logical-block` | `~<...~:>` | Pretty-printer logical block |
+
+**`:justify`** — clauses are inline, separated by padding.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:width` | integer | 0 | Minimum total width |
+| `:pad-step` | integer | 1 | Padding increment |
+| `:min-pad` | integer | 0 | Minimum padding |
+| `:fill` | char | space | Padding character |
+| `:pad-before` | boolean | false | Pad before first clause |
+| `:pad-after` | boolean | false | Pad after last clause |
 
 ```clojure
-:tilde                                ;; ~~
-[:tilde {:count 3}]                   ;; ~3~
+[:justify {:width 10} "foo" "bar"]           ;; ~10<foo~;bar~>
+[:justify {:width 10 :pad-before true
+           :pad-after true} "hello"]         ;; ~10:@<hello~>  (centered)
+[:justify {:width 40} :str :int :money]      ;; ~40<~A~;~D~;~$~>
 ```
 
-## Navigation
-
-### `:skip` — Skip forward (`~*`)
+**`:logical-block`** — clauses define prefix, body, and suffix for the
+pretty printer.
 
 ```clojure
-:skip                                 ;; ~*   skip 1
-[:skip {:n 3}]                        ;; ~3*  skip 3
+[:logical-block :str]                        ;; ~<~A~:>
+[:logical-block "(" :str ")"]                ;; ~<(~;~A~;)~:>
+[:logical-block {:colon true} :str]          ;; ~:<~A~:>
 ```
 
-### `:back` — Skip backward (`~:*`)
+### Control
+
+| Keyword | cl-format | Description |
+|---------|-----------|-------------|
+| `:stop` | `~^` | Exit enclosing iteration (or top-level format) |
+| `:break` | `~_` | Conditional newline (pretty printer) |
+| `:indent` | `~I` | Set indentation (pretty printer) |
+
+**`:stop` options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:outer` | boolean | Exit the enclosing `~:{` iteration, not just the current sublist |
+| `:arg1` | integer | One-arg test: exit if arg1 = 0 |
+| `:arg2` | integer | Two-arg test: exit if arg1 = arg2 |
+| `:arg3` | integer | Three-arg test: exit if arg1 ≤ arg2 ≤ arg3 |
+
+Usually abstracted by `:sep` on `:each`. Use directly for complex cases.
 
 ```clojure
-:back                                 ;; ~:*  back up 1
-[:back {:n 2}]                        ;; ~2:* back up 2
+:stop                            ;; ~^   exit if no args remain
+[:stop {:outer true}]            ;; ~:^  exit enclosing iteration
+[:stop {:arg1 0}]                ;; ~0^  exit if param = 0
 ```
 
-### `:goto` — Absolute go-to (`~@*`)
+**`:break` options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:mode` | keyword | `:fill`, `:miser`, or `:mandatory` (default: linear) |
 
 ```clojure
-:goto                                 ;; ~@*  go to arg 0
-[:goto {:n 5}]                        ;; ~5@* go to arg 5
+:break                           ;; ~_   linear
+[:break {:mode :fill}]           ;; ~:_
+[:break {:mode :miser}]          ;; ~@_
+[:break {:mode :mandatory}]      ;; ~:@_
 ```
 
-### `:recur` — Indirection (`~?`)
+**`:indent` options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `:n` | integer | Indentation amount (default 0) |
+| `:relative-to` | `:current` | Relative to current position instead of logical block |
 
 ```clojure
-:recur                                ;; ~?   sublist args
-[:recur {:from :rest}]                ;; ~@?  remaining args
+[:indent {:n 4}]                             ;; ~4I
+[:indent {:n 2 :relative-to :current}]       ;; ~2:I
 ```
 
-## Iteration
+## Complete Keyword Table
 
-### `:each` — Iterate (`~{...~}`)
-
-```clojure
-;; Basic — iterate over list argument
-[:each [:str]]                               ;; ~{~A~}
-
-;; With separator (the common pattern)
-[:each [:str] {:sep ", "}]                   ;; ~{~A~^, ~}
-
-;; Over remaining args
-[:each [:str] {:sep ", " :from :rest}]       ;; ~@{~A~^, ~}
-
-;; Over sublists
-[:each [:str " = " :int] {:from :sublists}]  ;; ~:{~A = ~D~}
-
-;; Over remaining-arg sublists
-[:each [:str] {:from :rest-sublists}]        ;; ~:@{~A~}
-
-;; Max iterations
-[:each [:str] {:sep ", " :max 5}]            ;; ~5{~A~^, ~}
-
-;; Force at least once
-[:each [:str] {:min 1}]                      ;; ~{~A~:}
-```
-
-Options: `:sep`, `:from` (`:rest`, `:sublists`, `:rest-sublists`), `:max`, `:min`
-
-## Conditionals
-
-### `:when` — Truthiness guard (`~@[...~]`)
-
-Print body only if the argument is truthy.
-
-```clojure
-[:when ["value: " :str]]                     ;; ~@[value: ~A~]
-```
-
-### `:if` — Boolean dispatch (`~:[...~;...~]`)
-
-True-clause first, false-clause second (natural order).
-
-```clojure
-[:if ["yes"] ["no"]]                         ;; ~:[no~;yes~]
-[:if [[:each [:str] {:sep ", "}]] ["(empty)"]]
-```
-
-### `:choose` — Numeric dispatch (`~[...~;...~]`)
-
-Select clause by index.
-
-```clojure
-[:choose [["zero"] ["one"] ["two"]]]
-[:choose [["zero"] ["one"]] {:default ["other"]}]
-[:choose [["a"] ["b"] ["c"]] {:selector 1}]
-```
-
-## Case Conversion
-
-Each variant is its own keyword — no flags needed.
-
-### `:downcase` (`~(`)
-
-```clojure
-[:downcase [:str]]                    ;; all lowercase
-```
-
-### `:capitalize` (`~:(`)
-
-```clojure
-[:capitalize [:str]]                  ;; Capitalize Each Word
-```
-
-### `:titlecase` (`~@(`)
-
-```clojure
-[:titlecase [:str]]                   ;; Capitalize first word only
-```
-
-### `:upcase` (`~:@(`)
-
-```clojure
-[:upcase [:str]]                      ;; ALL UPPERCASE
-```
-
-## Justification
-
-### `:justify` — Text justification (`~<...~>`)
-
-```clojure
-[:justify [["left"] ["right"]]]
-[:justify [["left"] ["right"]] {:width 40}]
-[:justify [["a"] ["b"] ["c"]] {:pad-before true :pad-after true}]
-```
-
-Options: `:width`, `:pad-step`, `:min-pad`, `:fill`, `:pad-before`, `:pad-after`
-
-### `:logical-block` — Pretty-print logical block (`~<...~:>`)
-
-```clojure
-[:logical-block [[:str]]]
-[:logical-block [["("] [:str] [")"]] {:colon true}]
-```
-
-## Control
-
-### `:stop` — Exit iteration (`~^`)
-
-Normally abstracted by `:sep` on `:each`. Use directly for complex cases.
-
-```clojure
-:stop                                 ;; ~^
-[:stop {:outer true}]                 ;; ~:^ exit enclosing iteration
-```
-
-### `:break` — Conditional newline (`~_`)
-
-```clojure
-:break                                ;; ~_  linear
-[:break {:mode :fill}]                ;; ~:_
-[:break {:mode :miser}]               ;; ~@_
-[:break {:mode :mandatory}]           ;; ~:@_
-```
-
-### `:indent` — Indentation (`~I`)
-
-```clojure
-[:indent {:n 4}]                      ;; ~4I  relative to block
-[:indent {:n 2 :relative-to :current}] ;; ~2:I relative to current
-```
-
-## Full Examples
-
-Format a table row:
-
-```clojure
-(clj-format nil
-  [[:int {:width 6}] " | " [:str {:width 20}] " | " [:float {:width 8 :decimals 2}]]
-  42 "widget" 3.14159)
-;; => "    42 | widget               |     3.14"
-```
-
-Comma-separated list:
-
-```clojure
-(clj-format nil [:each [:str] {:sep ", "}] ["a" "b" "c"])
-;; => "a, b, c"
-```
-
-Count with pluralization:
-
-```clojure
-(clj-format nil [:int " item" [:plural {:rewind true}]] 5)
-;; => "5 items"
-```
-
-Capitalized enumerated list:
-
-```clojure
-(clj-format nil
-  [:each [:roman ". " [:capitalize [:str]] :nl] {:from :rest}]
-  "first" "second" "third")
-```
-
-String passthrough:
-
-```clojure
-(clj-format nil "~{~A~^, ~}" ["a" "b" "c"])
-;; => "a, b, c"
-```
+| Keyword | cl-format | Category |
+|---------|-----------|----------|
+| `:str` | `~A` | Output |
+| `:pr` | `~S` | Output |
+| `:write` | `~W` | Output |
+| `:char` | `~C` | Output |
+| `:int` | `~D` | Integer |
+| `:bin` | `~B` | Integer |
+| `:oct` | `~O` | Integer |
+| `:hex` | `~X` | Integer |
+| `:radix` | `~nR` | Integer |
+| `:cardinal` | `~R` | Integer |
+| `:ordinal` | `~:R` | Integer |
+| `:roman` | `~@R` | Integer |
+| `:old-roman` | `~:@R` | Integer |
+| `:plural` | `~P` | Integer |
+| `:float` | `~F` | Float |
+| `:exp` | `~E` | Float |
+| `:gfloat` | `~G` | Float |
+| `:money` | `~$` | Float |
+| `:nl` | `~%` | Layout |
+| `:fresh` | `~&` | Layout |
+| `:page` | `~\|` | Layout |
+| `:tab` | `~T` | Layout |
+| `:tilde` | `~~` | Layout |
+| `:skip` | `~*` | Navigation |
+| `:back` | `~:*` | Navigation |
+| `:goto` | `~@*` | Navigation |
+| `:recur` | `~?` | Navigation |
+| `:each` | `~{...~}` | Iteration |
+| `:when` | `~@[...~]` | Conditional |
+| `:if` | `~:[...~]` | Conditional |
+| `:choose` | `~[...~]` | Conditional |
+| `:downcase` | `~(...~)` | Case |
+| `:capitalize` | `~:(...~)` | Case |
+| `:titlecase` | `~@(...~)` | Case |
+| `:upcase` | `~:@(...~)` | Case |
+| `:justify` | `~<...~>` | Justification |
+| `:logical-block` | `~<...~:>` | Pretty printer |
+| `:stop` | `~^` | Control |
+| `:break` | `~_` | Control |
+| `:indent` | `~I` | Control |
