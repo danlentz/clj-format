@@ -27,7 +27,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~10A" "foo")
-(clj-format nil [[:str {:width 10}]] "foo")
+(clj-format nil [:str {:width 10}] "foo")
 ;; => "foo       "
 ```
 
@@ -35,7 +35,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~10@A" "foo")
-(clj-format nil [[:str {:width 10 :pad :left}]] "foo")
+(clj-format nil [:str {:width 10 :pad :left}] "foo")
 ;; => "       foo"
 ```
 
@@ -45,7 +45,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~:D" 1000000)
-(clj-format nil [[:int {:group true}]] 1000000)
+(clj-format nil [:int {:group true}] 1000000)
 ;; => "1,000,000"
 ```
 
@@ -53,7 +53,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~@D" 42)
-(clj-format nil [[:int {:sign :always}]] 42)
+(clj-format nil [:int {:sign :always}] 42)
 ;; => "+42"
 ```
 
@@ -74,7 +74,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~,,'.,4:D" 100000000)
-(clj-format nil [[:int {:group-sep \. :group-size 4 :group true}]] 100000000)
+(clj-format nil [:int {:group-sep \. :group-size 4 :group true}] 100000000)
 ;; => "1.0000.0000"
 ```
 
@@ -91,7 +91,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~8,'0B" 255)
-(clj-format nil [[:bin {:width 8 :fill \0}]] 255)
+(clj-format nil [:bin {:width 8 :fill \0}] 255)
 ;; => "11111111"
 ```
 
@@ -99,7 +99,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~5,'*D" 3)
-(clj-format nil [[:int {:width 5 :fill \*}]] 3)
+(clj-format nil [:int {:width 5 :fill \*}] 3)
 ;; => "****3"
 ```
 
@@ -107,7 +107,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~7R" 63)
-(clj-format nil [[:radix {:base 7}]] 63)
+(clj-format nil [:radix {:base 7}] 63)
 ;; => "120"
 ```
 
@@ -117,11 +117,11 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~,,' ,4:B" 0xFACE)
-(clj-format nil [[:bin {:group-sep \space :group-size 4 :group true}]] 0xFACE)
+(clj-format nil [:bin {:group-sep \space :group-size 4 :group true}] 0xFACE)
 ;; => "1111 1010 1100 1110"
 
 (cl-format  nil "~19,,' ,4:B" 0x1CE)
-(clj-format nil [[:bin {:width 19 :group-sep \space :group-size 4 :group true}]] 0x1CE)
+(clj-format nil [:bin {:width 19 :group-sep \space :group-size 4 :group true}] 0x1CE)
 ;; => "        1 1100 1110"
 ```
 
@@ -131,7 +131,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~8,'0D" -2)
-(clj-format nil [[:int {:width 8 :fill \0}]] -2)
+(clj-format nil [:int {:width 8 :fill \0}] -2)
 ;; => "000000-2"
 ```
 
@@ -175,7 +175,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~(~@R~)" 124)
-(clj-format nil [[:roman {:case :downcase}]] 124)
+(clj-format nil [:roman {:case :downcase}] 124)
 ;; => "cxxiv"
 ```
 
@@ -195,7 +195,7 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~,4F" 3.14159265)
-(clj-format nil [[:float {:decimals 4}]] 3.14159265)
+(clj-format nil [:float {:decimals 4}] 3.14159265)
 ;; => "3.1416"
 ```
 
@@ -205,11 +205,11 @@ HyperSpec.
 
 ```clojure
 (cl-format  nil "~,4E" Math/PI)
-(clj-format nil [[:exp {:decimals 4}]] Math/PI)
+(clj-format nil [:exp {:decimals 4}] Math/PI)
 ;; => "3.1416E+0"
 
 (cl-format  nil "~9,2,1E" 3.14159)
-(clj-format nil [[:exp {:width 9 :decimals 2 :exp-digits 1}]] 3.14159)
+(clj-format nil [:exp {:width 9 :decimals 2 :exp-digits 1}] 3.14159)
 ;; => "  3.14E+0"
 ```
 
@@ -228,7 +228,7 @@ the next argument."*
 
 ```clojure
 (cl-format  nil "~V$" 3 Math/PI)
-(clj-format nil [[:money {:decimals :V}]] 3 Math/PI)
+(clj-format nil [:money {:decimals :V}] 3 Math/PI)
 ;; => "3.142"
 ```
 
@@ -327,7 +327,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~(~A~)" "THE QUICK BROWN FOX")
-(clj-format nil [[:str {:case :downcase}]] "THE QUICK BROWN FOX")
+(clj-format nil [:str {:case :downcase}] "THE QUICK BROWN FOX")
 ;; => "the quick brown fox"
 ```
 
@@ -335,7 +335,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~:(~A~)" "tHe Quick BROWN foX")
-(clj-format nil [[:str {:case :capitalize}]] "tHe Quick BROWN foX")
+(clj-format nil [:str {:case :capitalize}] "tHe Quick BROWN foX")
 ;; => "The Quick Brown Fox"
 ```
 
@@ -343,7 +343,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~@(~A~)" "tHe Quick BROWN foX")
-(clj-format nil [[:str {:case :titlecase}]] "tHe Quick BROWN foX")
+(clj-format nil [:str {:case :titlecase}] "tHe Quick BROWN foX")
 ;; => "The quick brown fox"
 ```
 
@@ -351,7 +351,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~:@(~A~)" "the quick brown fox")
-(clj-format nil [[:str {:case :upcase}]] "the quick brown fox")
+(clj-format nil [:str {:case :upcase}] "the quick brown fox")
 ;; => "THE QUICK BROWN FOX"
 ```
 
@@ -361,7 +361,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~[cero~;uno~;dos~]" 1)
-(clj-format nil [[:choose "cero" "uno" "dos"]] 1)
+(clj-format nil [:choose "cero" "uno" "dos"] 1)
 ;; => "uno"
 ```
 
@@ -369,7 +369,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~[cero~;uno~;dos~:;mucho~]" 100)
-(clj-format nil [[:choose {:default "mucho"} "cero" "uno" "dos"]] 100)
+(clj-format nil [:choose {:default "mucho"} "cero" "uno" "dos"] 100)
 ;; => "mucho"
 ```
 
@@ -377,11 +377,11 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~:[FAIL~;pass~]" true)
-(clj-format nil [[:if "pass" "FAIL"]] true)
+(clj-format nil [:if "pass" "FAIL"] true)
 ;; => "pass"
 
 (cl-format  nil "~:[FAIL~;pass~]" nil)
-(clj-format nil [[:if "pass" "FAIL"]] nil)
+(clj-format nil [:if "pass" "FAIL"] nil)
 ;; => "FAIL"
 ```
 
@@ -403,7 +403,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~{~A~^, ~}" [1 2 3])
-(clj-format nil [[:each {:sep ", "} :str]] [1 2 3])
+(clj-format nil [:each {:sep ", "} :str] [1 2 3])
 ;; => "1, 2, 3"
 ```
 
@@ -411,7 +411,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~@{~A~^, ~}" 1 2 3)
-(clj-format nil [[:each {:sep ", " :from :rest} :str]] 1 2 3)
+(clj-format nil [:each {:sep ", " :from :rest} :str] 1 2 3)
 ;; => "1, 2, 3"
 ```
 
@@ -419,7 +419,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~{~A: ~A~^, ~}" ["name" "Alice" "age" 30])
-(clj-format nil [[:each {:sep ", "} :str ": " :str]] ["name" "Alice" "age" 30])
+(clj-format nil [:each {:sep ", "} :str ": " :str] ["name" "Alice" "age" 30])
 ;; => "name: Alice, age: 30"
 ```
 
@@ -429,7 +429,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~{~@[~A ~]~}" [1 2 nil 3 nil 4])
-(clj-format nil [[:each [:when :str " "]]] [1 2 nil 3 nil 4])
+(clj-format nil [:each [:when :str " "]] [1 2 nil 3 nil 4])
 ;; => "1 2 3 4 "
 ```
 
@@ -437,7 +437,7 @@ turning "zero" into "Zero".*
 
 ```clojure
 (cl-format  nil "~{~A~*~^ ~}" [:a 10 :b 20])
-(clj-format nil [[:each {:sep " "} :str :skip]] [:a 10 :b 20])
+(clj-format nil [:each {:sep " "} :str :skip] [:a 10 :b 20])
 ;; => ":a :b"
 ```
 
@@ -565,7 +565,7 @@ args remain. Add more args to reveal more of the message.*
 
 ```clojure
 (cl-format  nil "~10<foo~;bar~>")
-(clj-format nil [[:justify {:width 10} "foo" "bar"]])
+(clj-format nil [:justify {:width 10} "foo" "bar"])
 ;; => "foo    bar"
 ```
 
@@ -573,7 +573,7 @@ args remain. Add more args to reveal more of the message.*
 
 ```clojure
 (cl-format  nil "~10:@<hello~>")
-(clj-format nil [[:justify {:width 10 :pad-before true :pad-after true} "hello"]])
+(clj-format nil [:justify {:width 10 :pad-before true :pad-after true} "hello"])
 ;; => "   hello  "
 ```
 
@@ -581,7 +581,7 @@ args remain. Add more args to reveal more of the message.*
 
 ```clojure
 (cl-format  nil "~10<hello~>")
-(clj-format nil [[:justify {:width 10} "hello"]])
+(clj-format nil [:justify {:width 10} "hello"])
 ;; => "     hello"
 ```
 
@@ -591,11 +591,11 @@ args remain. Add more args to reveal more of the message.*
 
 ```clojure
 (cl-format  nil "~10:<foo~;bar~>")
-(clj-format nil [[:justify {:width 10 :pad-before true} "foo" "bar"]])
+(clj-format nil [:justify {:width 10 :pad-before true} "foo" "bar"])
 ;; => "  foo  bar"
 
 (cl-format  nil "~10:@<foo~;bar~>")
-(clj-format nil [[:justify {:width 10 :pad-before true :pad-after true} "foo" "bar"]])
+(clj-format nil [:justify {:width 10 :pad-before true :pad-after true} "foo" "bar"])
 ;; => "  foo bar "
 ```
 

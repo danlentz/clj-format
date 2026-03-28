@@ -224,18 +224,35 @@
 ;; Public API
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn compile-format
-  "Compile a DSL body vector into a cl-format format string.
+(defn- directive-vector?
+  "True if v is a single directive vector (not a body of elements).
+   A vector starting with a compound keyword is always a directive.
+   A vector starting with a simple keyword is a directive if it has
+   0-1 elements or the second element is a map (options)."
+  [v]
+  (and (vector? v)
+       (keyword? (first v))
+       (or (d/+compound-keywords+ (first v))
+           (d/+special-keywords+ (first v))
+           (<= (count v) 1)
+           (map? (second v)))))
 
-   The input is a vector of elements as produced by parse-format or
-   written by hand. Elements can be literal strings, bare keywords
-   (simple directives), or vectors (directives with options or
-   compound directives).
+(defn compile-format
+  "Compile a DSL form into a cl-format format string.
+
+   Accepts:
+     - a body vector of elements: [\"Hello \" :str \"!\"]
+     - a single directive vector: [:each {:sep \", \"} :str]
+     - a bare keyword: :str
 
    Examples:
-     (compile-format [:str])                       ;=> \"~A\"
-     (compile-format [\"Hello \" :str \"!\"])       ;=> \"Hello ~A!\"
-     (compile-format [[:each {:sep \", \"} :str]])  ;=> \"~{~A~^, ~}\"
-     (compile-format [[:if \"yes\" \"no\"]])        ;=> \"~:[no~;yes~]\""
-  [dsl-body]
-  (compile-body dsl-body))
+     (compile-format [:str])                     ;=> \"~A\"
+     (compile-format [:str {:width 10}])         ;=> \"~10A\"
+     (compile-format [\"Hello \" :str \"!\"])     ;=> \"Hello ~A!\"
+     (compile-format [:each {:sep \", \"} :str])  ;=> \"~{~A~^, ~}\"
+     (compile-format [:if \"yes\" \"no\"])        ;=> \"~:[no~;yes~]\""
+  [dsl]
+  (cond
+    (keyword? dsl)            (compile-element dsl)
+    (directive-vector? dsl)   (compile-element dsl)
+    :else                     (compile-body dsl)))

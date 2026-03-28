@@ -168,7 +168,7 @@ Applied as a `:case` option — no extra nesting:
 
 ### Lowercase Roman numerals
 ```clojure
-(clj-format nil [[:roman {:case :downcase}]] 42)
+(clj-format nil [:roman {:case :downcase}] 42)
 ;; => "xlii"
 ```
 
@@ -222,15 +222,16 @@ with options or compound directives).
 (compile-format dsl-body)
 ```
 
-Compile a DSL body vector into a cl-format format string. The inverse of
-`parse-format`. Accepts the same element types that `parse-format` produces:
-strings, bare keywords, and directive vectors.
+Compile a DSL form into a cl-format format string. The inverse of
+`parse-format`. Accepts a body vector, a single directive vector, or a
+bare keyword.
 
 ```clojure
-(compile-format [:str])                       ;=> "~A"
-(compile-format ["Hello " :str "!"])          ;=> "Hello ~A!"
-(compile-format [[:each {:sep ", "} :str]])   ;=> "~{~A~^, ~}"
-(compile-format [[:if "yes" "no"]])           ;=> "~:[no~;yes~]"
+(compile-format [:str])                      ;=> "~A"
+(compile-format [:str {:width 10}])          ;=> "~10A"
+(compile-format ["Hello " :str "!"])         ;=> "Hello ~A!"
+(compile-format [:each {:sep ", "} :str])    ;=> "~{~A~^, ~}"
+(compile-format [:if "yes" "no"])            ;=> "~:[no~;yes~]"
 ```
 
 Round-trip fidelity: `(= s (compile-format (parse-format s)))` holds for
