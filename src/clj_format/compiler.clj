@@ -9,41 +9,8 @@
     (compile-format [\"Hello \" :str \"!\"])      => \"Hello ~A!\"
     (compile-format [[:each {:sep \", \"} :str]]) => \"~{~A~^, ~}\"
     (compile-format [[:if \"yes\" \"no\"]])       => \"~:[no~;yes~]\""
-  (:require [clojure.string :as str]))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Keyword → Directive Character Mapping
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def ^:private +keyword->char+
-  {:str \A  :pr \S  :write \W  :char \C
-   :int \D  :bin \B  :oct \O  :hex \X  :plural \P
-   :float \F  :exp \E  :gfloat \G  :money \$
-   :nl \%  :fresh \&  :page \|  :tab \T  :tilde \~
-   :recur \?  :stop \^  :indent \I
-   :skip \*  :back \*  :goto \*
-   :radix \R  :cardinal \R  :ordinal \R  :roman \R  :old-roman \R})
-
-(def ^:private +param-names+
-  "Positional parameter names for each directive keyword."
-  {:str [:width :pad-step :min-pad :fill]
-   :pr [:width :pad-step :min-pad :fill]
-   :write [] :char [] :plural []
-   :int [:width :fill :group-sep :group-size]
-   :bin [:width :fill :group-sep :group-size]
-   :oct [:width :fill :group-sep :group-size]
-   :hex [:width :fill :group-sep :group-size]
-   :radix [:base :width :fill :group-sep :group-size]
-   :float [:width :decimals :scale :overflow :fill]
-   :exp [:width :decimals :exp-digits :scale :overflow :fill :exp-char]
-   :gfloat [:width :decimals :exp-digits :scale :overflow :fill :exp-char]
-   :money [:decimals :int-digits :width :fill]
-   :nl [:count] :fresh [:count] :page [:count] :tilde [:count]
-   :tab [:col :step]
-   :recur [] :indent [:n]
-   :stop [:arg1 :arg2 :arg3]
-   :skip [:n] :back [:n] :goto [:n]})
+  (:require [clojure.string :as str]
+            [clj-format.directives :as d]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -72,29 +39,22 @@
       ""
       (str/join "," (map format-param (subvec positional 0 (inc last-idx)))))))
 
+(defn- flag-active?
+  "Check whether a semantic flag option is active in opts.
+   rule is [opt-key opt-val] from the directive's flag-rules."
+  [[opt-key opt-val] opts]
+  (let [v (get opts opt-key)]
+    (if (= true opt-val)
+      v
+      (= v opt-val))))
+
 (defn- compile-flags
-  "Determine colon and at flags from semantic opts for a given keyword."
+  "Determine colon and at flags from semantic opts, using the directive's
+   flag rules from the shared configuration."
   [kw opts]
-  (let [colon (case kw
-                (:int :bin :oct :hex :radix) (:group opts)
-                :money    (:sign-first opts)
-                :plural   (:rewind opts)
-                :write    (:pretty opts)
-                :char     (= :name (:format opts))
-                :stop     (:outer opts)
-                :indent   (= :current (:relative-to opts))
-                false)
-        at (case kw
-             (:int :bin :oct :hex :radix :float :exp :gfloat :money)
-             (= :always (:sign opts))
-             (:str :pr) (= :left (:pad opts))
-             :write     (:full opts)
-             :char      (= :readable (:format opts))
-             :tab       (:relative opts)
-             :recur     (= :rest (:from opts))
-             :plural    (= :ies (:form opts))
-             false)]
-    (str (when colon ":") (when at "@"))))
+  (let [rules (d/flag-rules kw)]
+    (str (when (and (:colon rules) (flag-active? (:colon rules) opts)) ":")
+         (when (and (:at rules) (flag-active? (:at rules) opts)) "@"))))
 
 (defn- escape-tildes
   "Escape literal tildes in text for cl-format."
@@ -106,13 +66,10 @@
 ;; Case Conversion Wrapping
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:private +case-open+
-  {:downcase "~(" :capitalize "~:(" :titlecase "~@(" :upcase "~:@("})
-
 (defn- wrap-case
   "Wrap a compiled format string fragment in case conversion."
   [compiled-str mode]
-  (str (get +case-open+ mode) compiled-str "~)"))
+  (str (get d/+case-open+ mode) compiled-str "~)"))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -128,35 +85,32 @@
 
 (defn- compile-clause
   "Compile a clause value (from :if, :choose, :justify).
-   nil → empty, string → escaped literal, keyword → directive,
-   vector → directive or body."
+   nil -> empty, string -> escaped literal, keyword -> directive,
+   vector -> directive or body."
   [clause]
   (cond
     (nil? clause)     ""
     (string? clause)  (escape-tildes clause)
-    (keyword? clause) (str "~" (get +keyword->char+ clause))
+    (keyword? clause) (compile-element clause)
     (vector? clause)  (if (keyword? (first clause))
                         (compile-element clause)
                         (compile-body clause))
     :else             (str clause)))
 
 (defn- compile-simple
-  "Compile a simple (non-compound) directive."
+  "Compile a simple (non-compound) directive using shared config."
   [kw opts]
   (let [case-mode (:case opts)
         opts (dissoc opts :case)
-        param-names (get +param-names+ kw [])
-        param-str (format-params param-names opts)
+        param-str (format-params (d/param-names kw) opts)
         flag-str (compile-flags kw opts)
-        char (get +keyword->char+ kw)
-        result (str "~" param-str flag-str char)]
+        result (str "~" param-str flag-str (d/directive-char kw))]
     (if case-mode (wrap-case result case-mode) result)))
 
 (defn- compile-special
   "Compile special-dispatch directives (:cardinal, :ordinal, etc.)."
   [kw opts]
   (let [case-mode (:case opts)
-        opts (dissoc opts :case)
         result (case kw
                  :cardinal  "~R"
                  :ordinal   "~:R"
@@ -174,11 +128,10 @@
     (if case-mode (wrap-case result case-mode) result)))
 
 (defn- compile-each
-  "Compile [:each opts? & body] → ~flags max{ body ~close}"
+  "Compile [:each opts? & body] -> ~flags max{ body ~close}"
   [opts body-elements]
   (let [case-mode (:case opts)
-        from (:from opts)
-        open-flags (case from
+        open-flags (case (:from opts)
                      :rest          "@"
                      :sublists      ":"
                      :rest-sublists ":@"
@@ -192,8 +145,8 @@
     (if case-mode (wrap-case result case-mode) result)))
 
 (defn- compile-if
-  "Compile [:if opts? then else] → ~:[false~;true~]
-   Reverses clause order: DSL true-first → cl-format false-first."
+  "Compile [:if opts? then else] -> ~:[false~;true~]
+   Reverses clause order: DSL true-first -> cl-format false-first."
   [opts then-clause else-clause]
   (let [case-mode (:case opts)
         false-str (compile-clause else-clause)
@@ -202,7 +155,7 @@
     (if case-mode (wrap-case result case-mode) result)))
 
 (defn- compile-when-cond
-  "Compile [:when opts? & body] → ~@[body~]"
+  "Compile [:when opts? & body] -> ~@[body~]"
   [opts body-elements]
   (let [case-mode (:case opts)
         body-str (compile-body body-elements)
@@ -210,7 +163,7 @@
     (if case-mode (wrap-case result case-mode) result)))
 
 (defn- compile-choose
-  "Compile [:choose opts? & clauses] → ~selector[c0~;c1~;...~:;default~]"
+  "Compile [:choose opts? & clauses] -> ~selector[c0~;c1~;...~:;default~]"
   [opts clauses]
   (let [case-mode (:case opts)
         selector (:selector opts)
@@ -230,10 +183,9 @@
   (wrap-case (compile-body body-elements) mode))
 
 (defn- compile-justify
-  "Compile [:justify opts? & clauses] → ~params flags<c0~;c1~;...~>"
+  "Compile [:justify opts? & clauses] -> ~params flags<c0~;c1~;...~>"
   [opts clauses]
-  (let [param-names [:width :pad-step :min-pad :fill]
-        param-str (format-params param-names opts)
+  (let [param-str (format-params (d/param-names :justify) opts)
         colon (:pad-before opts)
         at (:pad-after opts)
         flag-str (str (when colon ":") (when at "@"))
@@ -242,7 +194,7 @@
     (str "~" param-str flag-str "<" joined "~>")))
 
 (defn- compile-logical-block
-  "Compile [:logical-block opts? & clauses] → ~flags<c0~;...~:>"
+  "Compile [:logical-block opts? & clauses] -> ~flags<c0~;...~:>"
   [opts clauses]
   (let [flag-str (if (:colon opts) ":" "")
         clause-strs (map compile-clause clauses)
@@ -251,6 +203,7 @@
 
 (defn- parse-hiccup
   "Destructure a directive vector using the Hiccup convention.
+   If the second element is a map, it's options; everything after is children.
    Returns [keyword opts children]."
   [v]
   (let [kw (first v)
@@ -258,14 +211,6 @@
         opts (if has-opts (nth v 1) {})
         children (if has-opts (subvec v 2) (subvec v 1))]
     [kw opts children]))
-
-(def ^:private +compound-keywords+
-  #{:each :when :if :choose
-    :downcase :upcase :capitalize :titlecase
-    :justify :logical-block})
-
-(def ^:private +special-keywords+
-  #{:cardinal :ordinal :roman :old-roman :back :goto :break})
 
 (defn- compile-element
   "Compile a single DSL element into a format string fragment."
@@ -275,9 +220,9 @@
     (escape-tildes elem)
 
     (keyword? elem)
-    (if (+special-keywords+ elem)
+    (if (d/+special-keywords+ elem)
       (compile-special elem {})
-      (str "~" (get +keyword->char+ elem)))
+      (str "~" (d/directive-char elem)))
 
     (vector? elem)
     (let [[kw opts children] (parse-hiccup elem)]
@@ -290,19 +235,17 @@
         (= :justify kw)        (compile-justify opts children)
         (= :logical-block kw)  (compile-logical-block opts children)
 
-        ;; Case conversion compounds (multi-element body)
+        ;; Case conversion compounds (multi-element body, opts ignored)
         (#{:downcase :upcase :capitalize :titlecase} kw)
-        (compile-case-compound kw (into (if (seq opts) [opts] []) children))
+        (compile-case-compound kw children)
 
         ;; Special dispatch — if it has children, it's a body vector
-        (+special-keywords+ kw) (if (seq children)
-                                  (compile-body elem)
-                                  (compile-special kw opts))
+        (d/+special-keywords+ kw)
+        (if (seq children) (compile-body elem) (compile-special kw opts))
 
-        ;; Simple directive — if it has children, it's a body vector, not a directive
-        true (if (seq children)
-               (compile-body elem)
-               (compile-simple kw opts))))))
+        ;; Simple directive — if it has children, it's a body vector
+        true
+        (if (seq children) (compile-body elem) (compile-simple kw opts))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -318,16 +261,9 @@
    compound directives).
 
    Examples:
-     (compile-format [:str])
-     ;=> \"~A\"
-
-     (compile-format [\"Hello \" :str \"!\"])
-     ;=> \"Hello ~A!\"
-
-     (compile-format [[:each {:sep \", \"} :str]])
-     ;=> \"~{~A~^, ~}\"
-
-     (compile-format [[:if \"yes\" \"no\"]])
-     ;=> \"~:[no~;yes~]\""
+     (compile-format [:str])                       ;=> \"~A\"
+     (compile-format [\"Hello \" :str \"!\"])       ;=> \"Hello ~A!\"
+     (compile-format [[:each {:sep \", \"} :str]])  ;=> \"~{~A~^, ~}\"
+     (compile-format [[:if \"yes\" \"no\"]])        ;=> \"~:[no~;yes~]\""
   [dsl-body]
   (compile-body dsl-body))

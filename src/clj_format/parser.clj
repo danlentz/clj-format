@@ -5,69 +5,12 @@
   Bare keywords represent no-opts directives. Strings are literal text.
 
   Examples:
-    (parse-format \"~A\")             => [:str]
-    (parse-format \"~10D\")           => [[:int {:width 10}]]
-    (parse-format \"Hello ~A!\")      => [\"Hello \" :str \"!\"]
-    (parse-format \"~{~A~^, ~}\")    => [[:each {:sep \", \"} :str]]
-    (parse-format \"~:[no~;yes~]\")  => [[:if \"yes\" \"no\"]]
-    (parse-format \"~:(~A~)\")       => [[:capitalize :str]]")
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Directive Configuration
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def ^:private +simple-directives+
-  "Data-driven config for simple (non-compound) directives.
-   Each entry maps a directive character (uppercase) to:
-     :kw     — DSL keyword
-     :params — positional param names in order
-     :flags  — map of raw flag key to [opt-key opt-val] semantic pair"
-  {\A {:kw :str
-       :params [:width :pad-step :min-pad :fill]
-       :flags {:at [:pad :left]}}
-   \S {:kw :pr
-       :params [:width :pad-step :min-pad :fill]
-       :flags {:at [:pad :left]}}
-   \W {:kw :write :params [] :flags {:colon [:pretty true] :at [:full true]}}
-   \C {:kw :char  :params [] :flags {:colon [:format :name] :at [:format :readable]}}
-   \D {:kw :int
-       :params [:width :fill :group-sep :group-size]
-       :flags {:colon [:group true] :at [:sign :always]}}
-   \B {:kw :bin
-       :params [:width :fill :group-sep :group-size]
-       :flags {:colon [:group true] :at [:sign :always]}}
-   \O {:kw :oct
-       :params [:width :fill :group-sep :group-size]
-       :flags {:colon [:group true] :at [:sign :always]}}
-   \X {:kw :hex
-       :params [:width :fill :group-sep :group-size]
-       :flags {:colon [:group true] :at [:sign :always]}}
-   \P {:kw :plural :params [] :flags {:colon [:rewind true] :at [:form :ies]}}
-   \F {:kw :float
-       :params [:width :decimals :scale :overflow :fill]
-       :flags {:at [:sign :always]}}
-   \E {:kw :exp
-       :params [:width :decimals :exp-digits :scale :overflow :fill :exp-char]
-       :flags {:at [:sign :always]}}
-   \G {:kw :gfloat
-       :params [:width :decimals :exp-digits :scale :overflow :fill :exp-char]
-       :flags {:at [:sign :always]}}
-   \$ {:kw :money
-       :params [:decimals :int-digits :width :fill]
-       :flags {:colon [:sign-first true] :at [:sign :always]}}
-   \% {:kw :nl    :params [:count] :flags {}}
-   \& {:kw :fresh :params [:count] :flags {}}
-   \| {:kw :page  :params [:count] :flags {}}
-   \T {:kw :tab   :params [:col :step] :flags {:at [:relative true]}}
-   \~ {:kw :tilde :params [:count] :flags {}}
-   \? {:kw :recur :params [] :flags {:at [:from :rest]}}
-   \^ {:kw :stop  :params [:arg1 :arg2 :arg3] :flags {:colon [:outer true]}}
-   \I {:kw :indent :params [:n] :flags {:colon [:relative-to :current]}}})
-
-(def ^:private +compound-open+
-  "Directive characters that open compound (bracketed) directives."
-  #{\[ \{ \( \<})
+    (parse-format \"~A\")             ;=> [:str]
+    (parse-format \"Hello ~A!\")      ;=> [\"Hello \" :str \"!\"]
+    (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
+    (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
+    (parse-format \"~:(~A~)\")       ;=> [[:capitalize :str]]"
+  (:require [clj-format.directives :as d]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -81,7 +24,7 @@
     (.charAt s pos)))
 
 (defn- parse-int
-  "Parse an integer at pos. Returns [value end-pos] or nil."
+  "Parse a signed integer at pos. Returns [value end-pos] or nil."
   [^String s ^long pos]
   (when (< pos (.length s))
     (let [c          (.charAt s pos)
@@ -110,6 +53,7 @@
 
 (defn- parse-one-param
   "Parse a single directive parameter at pos.
+   Handles integer literals, character literals ('x), V, and #.
    Returns [value end-pos] or nil if no param found."
   [^String s ^long pos]
   (when-let [c (char-at s pos)]
@@ -120,8 +64,9 @@
       true                      (parse-int s pos))))
 
 (defn- parse-params
-  "Parse comma-separated directive parameters.
-   Returns [param-vec end-pos]. Empty params yield [[] pos]."
+  "Parse comma-separated directive parameters after a tilde.
+   Parameters may be integers, 'char literals, V (arg value), # (arg count),
+   or omitted (nil). Returns [param-vec end-pos]."
   [^String s ^long pos]
   (let [has-param (some? (parse-one-param s pos))
         has-comma (= (char-at s pos) \,)]
@@ -140,7 +85,7 @@
 
 (defn- parse-flags
   "Parse colon and at-sign modifier flags.
-   Returns [flag-map end-pos] where flag-map contains only truthy flags."
+   Returns [flag-map end-pos] where flag-map has only truthy keys."
   [^String s ^long pos]
   (loop [pos (long pos), colon false, at false]
     (case (char-at s pos)
@@ -157,7 +102,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- positional->named
-  "Convert positional params to a named map. Nil values omitted."
+  "Convert positional params to a named map using the given name list.
+   Nil values are omitted."
   [param-names params]
   (into {}
         (keep-indexed (fn [i v]
@@ -166,7 +112,7 @@
         params))
 
 (defn- translate-flags
-  "Translate raw colon/at flags to semantic options.
+  "Translate raw colon/at flags to semantic options using a flag-map.
    flag-map is {:colon [key val], :at [key val]}."
   [raw-flags flag-map]
   (reduce-kv (fn [m flag-key [opt-key opt-val]]
@@ -176,8 +122,8 @@
              {} flag-map))
 
 (defn- build-simple-directive
-  "Build a DSL form for a simple directive. Returns bare keyword when no
-   opts, or [keyword opts-map] when opts are present."
+  "Build a DSL form for a simple directive using its config entry.
+   Returns bare keyword when no opts, or [keyword opts-map] when present."
   [config positional-params raw-flags]
   (let [{:keys [kw params flags]} config
         named (positional->named params positional-params)
@@ -189,9 +135,10 @@
 
 (defn- inline-clause
   "Convert a body-elements vector to a single inline clause value.
-   []    → nil (empty clause)
-   [x]   → x  (unwrap single element)
-   [x y] → [x y] (multi-element body vector)"
+   Follows the Hiccup convention — unwrap single-element bodies:
+     []    -> nil  (empty clause)
+     [x]   -> x   (bare keyword, string, or directive vector)
+     [x y] -> [x y] (multi-element body vector)"
   [body-elements]
   (case (count body-elements)
     0 nil
@@ -208,7 +155,7 @@
 
 (defn- make-clause-compound
   "Build multi-clause compound with inline clauses (Hiccup convention).
-   [:keyword opts? & clauses]"
+   [:keyword opts? clause1 clause2 ...]"
   [kw opts clauses]
   (let [inlined (mapv inline-clause clauses)]
     (if (seq opts)
@@ -218,14 +165,16 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Special Directive Dispatch
+;;
+;; R, *, and _ map to different DSL keywords based on flags/params.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- translate-radix
   "~R dispatches to :cardinal, :ordinal, :roman, :old-roman, or :radix."
   [params raw-flags]
   (if (seq params)
-    (let [named (positional->named [:base :width :fill :group-sep :group-size] params)
-          flag-opts (translate-flags raw-flags {:colon [:group true] :at [:sign :always]})
+    (let [named (positional->named (d/param-names :radix) params)
+          flag-opts (translate-flags raw-flags (d/flag-rules :radix))
           opts (merge named flag-opts)]
       (if (seq opts) [:radix opts] :radix))
     (cond
@@ -238,7 +187,7 @@
   "~* dispatches to :skip, :back, or :goto based on flags."
   [params raw-flags]
   (let [kw (cond (:at raw-flags) :goto, (:colon raw-flags) :back, true :skip)
-        named (positional->named [:n] params)]
+        named (positional->named (d/param-names kw) params)]
     (if (seq named) [kw named] kw)))
 
 (defn- translate-break
@@ -259,8 +208,9 @@
 (declare parse-body)
 
 (defn- detect-sep
-  "If elements end with :stop followed by a literal string (and there's
-   only one :stop in the body), extract it as a :sep value.
+  "Detect the ~^separator pattern at the end of an iteration body.
+   If elements end with bare :stop followed by a literal string, and there
+   is exactly one :stop in the body, extract it as a :sep value.
    Returns [cleaned-elements sep-string-or-nil]."
   [elements]
   (let [n (count elements)]
@@ -270,6 +220,27 @@
              (= 1 (count (filter #(= :stop %) elements))))
       [(subvec elements 0 (- n 2)) (nth elements (- n 1))]
       [elements nil])))
+
+(defn- merge-case-into
+  "Merge a :case option into a single DSL element. Returns the merged form,
+   or nil if merging is not possible (element is a string, or already has
+   a :case option — avoiding double-wrapping)."
+  [element mode]
+  (cond
+    ;; Bare keyword like :str -> [:str {:case mode}]
+    (keyword? element)
+    [element {:case mode}]
+
+    ;; Directive or compound vector — merge :case into opts
+    (and (vector? element) (keyword? (first element)))
+    (if (and (> (count element) 1) (map? (nth element 1)))
+      (if (:case (nth element 1))
+        nil ;; already has :case, can't merge
+        (assoc element 1 (assoc (nth element 1) :case mode)))
+      (into [(first element) {:case mode}] (subvec element 1)))
+
+    ;; String or unknown — can't merge
+    true nil))
 
 (defn- parse-choose
   "Parse ~[...~;...~] as numeric dispatch."
@@ -288,7 +259,7 @@
          pos]))))
 
 (defn- parse-if
-  "Parse ~:[false~;true~] — reverses to true-first."
+  "Parse ~:[false~;true~] — reverses clause order to true-first."
   [^String s ^long pos]
   (let [[false-body pos _ _] (parse-body s pos #{\] \;})
         [true-body pos _ _]  (parse-body s pos #{\]})
@@ -319,29 +290,6 @@
                max-val (assoc :max max-val)
                force   (assoc :min 1))]
     [(make-body-compound :each opts elements) pos]))
-
-(defn- merge-case-into
-  "Merge a :case option into a DSL element. Returns the merged form, or
-   nil if merging isn't possible (e.g., element is a string or already
-   has a :case option)."
-  [element mode]
-  (cond
-    ;; Bare keyword like :str → [:str {:case mode}]
-    (keyword? element)
-    [element {:case mode}]
-
-    ;; Directive or compound vector — merge :case into opts
-    (and (vector? element) (keyword? (first element)))
-    (if (and (> (count element) 1) (map? (nth element 1)))
-      ;; Has opts map — merge if no existing :case
-      (if (:case (nth element 1))
-        nil
-        (assoc element 1 (assoc (nth element 1) :case mode)))
-      ;; No opts map — insert one after the keyword
-      (into [(first element) {:case mode}] (subvec element 1)))
-
-    ;; String or unknown — can't merge
-    true nil))
 
 (defn- parse-case-conversion
   "Parse ~(...~). Flattens to a :case option when the body is a single
@@ -395,34 +343,42 @@
 
 (defn- parse-directive
   "Parse a single directive starting after the tilde.
-   Returns [dsl-form end-pos]. dsl-form is ::skip for format-string
-   newlines that produce no output."
+   Returns [dsl-form end-pos]. dsl-form is nil for format-string
+   newlines that produce no output (plain ~\\n and ~:\\n)."
   [^String s ^long pos]
   (let [[params pos] (parse-params s pos)
         [flags pos]  (parse-flags s pos)
         c            (char-at s pos)
         pos          (inc pos)]
     (cond
-      (+compound-open+ c)
+      ;; Compound opening bracket
+      (#{\[ \{ \( \<} c)
       (parse-compound s pos c params flags)
 
+      ;; Tilde-newline: format string layout control
+      ;; Plain and colon variants skip the newline (produce no output).
+      ;; At variant emits a newline. Whitespace after is consumed for
+      ;; plain and at; preserved for colon.
       (= c \newline)
       (let [pos (if (:colon flags) pos (skip-whitespace s pos))]
-        (if (:at flags) [:nl pos] [::skip pos]))
+        (if (:at flags) [:nl pos] [nil pos]))
 
+      ;; Special dispatch: R, *, _ — keyword depends on flags
       true
       (let [uc (Character/toUpperCase ^char c)]
         (case uc
           \R [(translate-radix params flags) pos]
           \* [(translate-goto params flags) pos]
           \_ [(translate-break flags) pos]
-          (if-let [config (get +simple-directives+ uc)]
+          ;; Standard simple directive via shared config
+          (if-let [config (get d/+char->simple+ uc)]
             [(build-simple-directive config params flags) pos]
             (throw (ex-info (str "Unknown directive character: " c)
                             {:char c :position (dec pos)}))))))))
 
 (defn- parse-body
-  "Parse literal text and directives until end of string or a terminator.
+  "Parse a sequence of literal text and directives until end of string
+   or a terminating directive character from the terminators set.
    Returns [elements end-pos term-char term-flags]."
   [^String s ^long pos terminators]
   (loop [pos (long pos), elements []]
@@ -430,6 +386,7 @@
       [elements pos nil nil]
       (let [c (.charAt s pos)]
         (if (= c \~)
+          ;; Peek ahead for terminator
           (let [peek-pos              (inc pos)
                 [_params peek-pos]    (parse-params s peek-pos)
                 [peek-flags peek-pos] (parse-flags s peek-pos)
@@ -437,9 +394,10 @@
             (if (contains? terminators peek-char)
               [elements (inc peek-pos) peek-char peek-flags]
               (let [[form end-pos] (parse-directive s (inc pos))]
-                (if (= form ::skip)
-                  (recur end-pos elements)
-                  (recur end-pos (conj elements form))))))
+                (if (some? form)
+                  (recur end-pos (conj elements form))
+                  (recur end-pos elements)))))
+          ;; Literal text — accumulate until next tilde or end
           (let [end (loop [i pos]
                       (if (and (< i (.length s)) (not= (.charAt s i) \~))
                         (recur (inc i))
@@ -456,7 +414,6 @@
 
    Returns a vector of elements: literal strings, bare keywords (simple
    directives), and vectors (directives with opts or compound directives).
-
    Follows the Hiccup convention: [:keyword optional-map & children].
 
    Examples:
@@ -465,7 +422,7 @@
      (parse-format \"~10:D\")          ;=> [[:int {:width 10 :group true}]]
      (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
      (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
-     (parse-format \"~:(~A~)\")       ;=> [[:capitalize :str]]"
+     (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
   [^String s]
   (let [[elements _ _ _] (parse-body s 0 #{})]
     elements))

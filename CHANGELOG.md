@@ -1,24 +1,41 @@
-# Change Log
-All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](https://keepachangelog.com/).
+# Changelog
+
+All notable changes to this project will be documented in this file.
+This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
-### Changed
-- Add a new arity to `make-widget-async` to provide a different widget shape.
-
-## [0.1.1] - 2026-03-27
-### Changed
-- Documentation on how to make the widgets.
-
-### Removed
-- `make-widget-sync` - we're all async, all the time.
-
-### Fixed
-- Fixed widget maker to keep working when daylight savings switches over.
 
 ## 0.1.0 - 2026-03-27
-### Added
-- Files from the new template.
-- Widget maker public API - `make-widget-sync`.
 
-[Unreleased]: https://sourcehost.site/your-name/clj-format/compare/0.1.1...HEAD
-[0.1.1]: https://sourcehost.site/your-name/clj-format/compare/0.1.0...0.1.1
+### Added
+- **Parser** (`clj-format.parser/parse-format`): Recursive descent parser
+  that converts any cl-format string into the clj-format s-expression DSL.
+  Covers all 33 cl-format directives including compound/nested forms.
+
+- **Compiler** (`clj-format.compiler/compile-format`): Serializes the DSL
+  back into cl-format strings. Full round-trip fidelity:
+  `(= s (compile-format (parse-format s)))` for any valid format string.
+
+- **Core API** (`clj-format.core/clj-format`): Drop-in replacement for
+  `clojure.pprint/cl-format`. Accepts format strings (passthrough),
+  DSL vectors, or bare keywords. Supports all writer modes (nil, true,
+  false, Writer).
+
+- **Shared directive config** (`clj-format.directives`): Single source of
+  truth for all directive metadata (characters, parameter names, flag
+  mappings). Used by both parser and compiler.
+
+- **DSL design**: Hiccup-convention `[:keyword opts? & body]` with:
+  - Semantic option names (`:width`, `:group`, `:sign`, `:sep`, etc.)
+    instead of cl-format's `:colon`/`:at` flags
+  - Distinct keywords for distinct behaviors (`:cardinal`/`:ordinal`/
+    `:roman`; `:if`/`:when`/`:choose`)
+  - Case conversion as `:case` option, flattened into the element
+  - Bare keywords as shorthand (`:str` for `[:str]`)
+  - `:sep` on `:each` abstracts the `~^separator` pattern
+
+- **Documentation**:
+  - `doc/dsl.md` — complete DSL reference
+  - `doc/examples.md` — 50+ side-by-side examples from Practical Common
+    Lisp, CLtL2, ClojureDocs, and the CL HyperSpec
+  - `README.md` — quick start, DSL overview, real-world examples
