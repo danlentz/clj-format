@@ -20,56 +20,57 @@
 (defn- format-param
   "Format a single positional param value for cl-format."
   [v]
-  (cond
-    (nil? v)     ""
-    (integer? v) (str v)
-    (char? v)    (str "'" v)
-    (= :V v)     "V"
-    (= :# v)     "#"
-    :else        (str v)))
+  (case v
+    nil ""
+    :V  "V"
+    :#  "#"
+    (if (char? v) (str "'" v) (str v))))
 
 (defn- format-params
   "Build the comma-separated param string, trimming trailing nils."
   [param-names opts]
   (let [positional (mapv #(get opts %) param-names)
-        last-idx (reduce (fn [acc i]
-                           (if (some? (nth positional i)) i acc))
-                         -1 (range (count positional)))]
+        last-idx   (reduce (fn [acc i] (if (some? (nth positional i)) i acc))
+                           -1 (range (count positional)))]
     (if (neg? last-idx)
       ""
-      (str/join "," (map format-param (subvec positional 0 (inc last-idx)))))))
+      (->> (subvec positional 0 (inc last-idx))
+           (map format-param)
+           (str/join ",")))))
 
 (defn- flag-active?
   "Check whether a semantic flag option is active in opts.
    rule is [opt-key opt-val] from the directive's flag-rules."
   [[opt-key opt-val] opts]
   (let [v (get opts opt-key)]
-    (if (= true opt-val)
-      v
-      (= v opt-val))))
+    (if (true? opt-val) v (= v opt-val))))
 
 (defn- compile-flags
-  "Determine colon and at flags from semantic opts, using the directive's
-   flag rules from the shared configuration."
-  [kw opts]
-  (let [rules (d/flag-rules kw)]
-    (str (when (and (:colon rules) (flag-active? (:colon rules) opts)) ":")
-         (when (and (:at rules) (flag-active? (:at rules) opts)) "@"))))
+  "Determine colon and at flags from semantic opts using flag rules."
+  [{:keys [colon at]} opts]
+  (str (when (and colon (flag-active? colon opts)) ":")
+       (when (and at (flag-active? at opts)) "@")))
 
-(defn- escape-tildes
-  "Escape literal tildes in text for cl-format."
-  [s]
+(defn- escape-tildes [s]
   (str/replace s "~" "~~"))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Case Conversion Wrapping
+;; Case Conversion
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- wrap-case
   "Wrap a compiled format string fragment in case conversion."
   [compiled-str mode]
-  (str (get d/+case-open+ mode) compiled-str "~)"))
+  (str (d/+case-open+ mode) compiled-str "~)"))
+
+(defn- maybe-wrap-case
+  "If opts contains :case, wrap result in case conversion and return
+   opts without :case. Otherwise return result unchanged."
+  [opts compile-fn]
+  (let [case-mode (:case opts)
+        result    (compile-fn (dissoc opts :case))]
+    (if case-mode (wrap-case result case-mode) result)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -97,119 +98,95 @@
                         (compile-body clause))
     :else             (str clause)))
 
+(defn- join-clauses
+  "Compile clauses and join with ~; separators."
+  [clauses]
+  (str/join "~;" (map compile-clause clauses)))
+
 (defn- compile-simple
   "Compile a simple (non-compound) directive using shared config."
   [kw opts]
-  (let [case-mode (:case opts)
-        opts (dissoc opts :case)
-        param-str (format-params (d/param-names kw) opts)
-        flag-str (compile-flags kw opts)
-        result (str "~" param-str flag-str (d/directive-char kw))]
-    (if case-mode (wrap-case result case-mode) result)))
+  (let [{:keys [char params flags]} (d/+directives+ kw)]
+    (maybe-wrap-case opts
+      (fn [opts]
+        (str "~" (format-params params opts) (compile-flags flags opts) char)))))
 
 (defn- compile-special
   "Compile special-dispatch directives (:cardinal, :ordinal, etc.)."
   [kw opts]
-  (let [case-mode (:case opts)
-        result (case kw
-                 :cardinal  "~R"
-                 :ordinal   "~:R"
-                 :roman     "~@R"
-                 :old-roman "~:@R"
-                 :back      (let [n (:n opts)]
-                              (if n (str "~" n ":*") "~:*"))
-                 :goto      (let [n (:n opts)]
-                              (if n (str "~" n "@*") "~@*"))
-                 :break     (case (:mode opts)
-                              :fill      "~:_"
-                              :miser     "~@_"
-                              :mandatory "~:@_"
-                              nil        "~_"))]
-    (if case-mode (wrap-case result case-mode) result)))
+  (maybe-wrap-case opts
+    (fn [opts]
+      (case kw
+        :cardinal  "~R"
+        :ordinal   "~:R"
+        :roman     "~@R"
+        :old-roman "~:@R"
+        :back      (str "~" (some-> (:n opts) str) ":*")
+        :goto      (str "~" (some-> (:n opts) str) "@*")
+        :break     (case (:mode opts)
+                     :fill      "~:_"
+                     :miser     "~@_"
+                     :mandatory "~:@_"
+                     "~_")))))
 
 (defn- compile-each
   "Compile [:each opts? & body] -> ~flags max{ body ~close}"
   [opts body-elements]
-  (let [case-mode (:case opts)
-        open-flags (case (:from opts)
-                     :rest          "@"
-                     :sublists      ":"
-                     :rest-sublists ":@"
-                     nil            "")
-        max-str (if-let [m (:max opts)] (str m) "")
-        body-str (compile-body body-elements)
-        sep (:sep opts)
-        body-with-sep (if sep (str body-str "~^" sep) body-str)
-        close (if (= 1 (:min opts)) "~:}" "~}")
-        result (str "~" max-str open-flags "{" body-with-sep close)]
-    (if case-mode (wrap-case result case-mode) result)))
+  (maybe-wrap-case opts
+    (fn [{:keys [from max min sep] :as opts}]
+      (let [open-flags (case from
+                         :rest "@", :sublists ":", :rest-sublists ":@", nil "")
+            body-str   (compile-body body-elements)
+            body-str   (if sep (str body-str "~^" sep) body-str)]
+        (str "~" (some-> max str) open-flags "{"
+             body-str
+             (if (= 1 min) "~:}" "~}"))))))
 
 (defn- compile-if
-  "Compile [:if opts? then else] -> ~:[false~;true~]
-   Reverses clause order: DSL true-first -> cl-format false-first."
+  "Compile [:if opts? then else] -> ~:[false~;true~]"
   [opts then-clause else-clause]
-  (let [case-mode (:case opts)
-        false-str (compile-clause else-clause)
-        true-str (compile-clause then-clause)
-        result (str "~:[" false-str "~;" true-str "~]")]
-    (if case-mode (wrap-case result case-mode) result)))
+  (maybe-wrap-case opts
+    (fn [_]
+      (str "~:[" (compile-clause else-clause) "~;" (compile-clause then-clause) "~]"))))
 
 (defn- compile-when-cond
   "Compile [:when opts? & body] -> ~@[body~]"
   [opts body-elements]
-  (let [case-mode (:case opts)
-        body-str (compile-body body-elements)
-        result (str "~@[" body-str "~]")]
-    (if case-mode (wrap-case result case-mode) result)))
+  (maybe-wrap-case opts
+    (fn [_] (str "~@[" (compile-body body-elements) "~]"))))
 
 (defn- compile-choose
   "Compile [:choose opts? & clauses] -> ~selector[c0~;c1~;...~:;default~]"
   [opts clauses]
-  (let [case-mode (:case opts)
-        selector (:selector opts)
-        default (:default opts)
-        selector-str (if selector (format-param selector) "")
-        clause-strs (map compile-clause clauses)
-        joined (str/join "~;" clause-strs)
-        with-default (if default
-                       (str joined "~:;" (compile-clause default))
-                       joined)
-        result (str "~" selector-str "[" with-default "~]")]
-    (if case-mode (wrap-case result case-mode) result)))
-
-(defn- compile-case-compound
-  "Compile case conversion compound form (multi-element body)."
-  [mode body-elements]
-  (wrap-case (compile-body body-elements) mode))
+  (maybe-wrap-case opts
+    (fn [{:keys [selector default]}]
+      (let [joined (join-clauses clauses)]
+        (str "~" (some-> selector format-param)
+             "[" (if default (str joined "~:;" (compile-clause default)) joined)
+             "~]")))))
 
 (defn- compile-justify
   "Compile [:justify opts? & clauses] -> ~params flags<c0~;c1~;...~>"
   [opts clauses]
-  (let [param-str (format-params (d/param-names :justify) opts)
-        colon (:pad-before opts)
-        at (:pad-after opts)
-        flag-str (str (when colon ":") (when at "@"))
-        clause-strs (map compile-clause clauses)
-        joined (str/join "~;" clause-strs)]
-    (str "~" param-str flag-str "<" joined "~>")))
+  (str "~" (format-params (:params (d/+directives+ :justify)) opts)
+       (when (:pad-before opts) ":") (when (:pad-after opts) "@")
+       "<" (join-clauses clauses) "~>"))
 
 (defn- compile-logical-block
   "Compile [:logical-block opts? & clauses] -> ~flags<c0~;...~:>"
   [opts clauses]
-  (let [flag-str (if (:colon opts) ":" "")
-        clause-strs (map compile-clause clauses)
-        joined (str/join "~;" clause-strs)]
-    (str "~" flag-str "<" joined "~:>")))
+  (str "~" (when (:colon opts) ":")
+       "<" (join-clauses clauses) "~:>"))
 
 (defn- parse-hiccup
   "Destructure a directive vector using the Hiccup convention.
    If the second element is a map, it's options; everything after is children.
    Returns [keyword opts children]."
   [v]
-  (let [kw (first v)
-        has-opts (and (> (count v) 1) (map? (nth v 1)))
-        opts (if has-opts (nth v 1) {})
-        children (if has-opts (subvec v 2) (subvec v 1))]
+  (let [[kw & body] v
+        [opts children] (if (map? (first body))
+                          [(first body) (vec (rest body))]
+                          [{} (vec body)])]
     [kw opts children]))
 
 (defn- compile-element
@@ -222,30 +199,25 @@
     (keyword? elem)
     (if (d/+special-keywords+ elem)
       (compile-special elem {})
-      (str "~" (d/directive-char elem)))
+      (str "~" (:char (d/+directives+ elem))))
 
     (vector? elem)
     (let [[kw opts children] (parse-hiccup elem)]
-      (cond
-        ;; Compound directives
-        (= :each kw)           (compile-each opts children)
-        (= :if kw)             (compile-if opts (first children) (second children))
-        (= :when kw)           (compile-when-cond opts children)
-        (= :choose kw)         (compile-choose opts children)
-        (= :justify kw)        (compile-justify opts children)
-        (= :logical-block kw)  (compile-logical-block opts children)
-
-        ;; Case conversion compounds (multi-element body, opts ignored)
-        (#{:downcase :upcase :capitalize :titlecase} kw)
-        (compile-case-compound kw children)
-
-        ;; Special dispatch — if it has children, it's a body vector
-        (d/+special-keywords+ kw)
-        (if (seq children) (compile-body elem) (compile-special kw opts))
-
-        ;; Simple directive — if it has children, it's a body vector
-        true
-        (if (seq children) (compile-body elem) (compile-simple kw opts))))))
+      (case kw
+        :each          (compile-each opts children)
+        :if            (compile-if opts (first children) (second children))
+        :when          (compile-when-cond opts children)
+        :choose        (compile-choose opts children)
+        :justify       (compile-justify opts children)
+        :logical-block (compile-logical-block opts children)
+        (:downcase :upcase :capitalize :titlecase)
+                       (wrap-case (compile-body children) kw)
+        ;; Special or simple — if children present, it's a body vector
+        (cond
+          (and (d/+special-keywords+ kw) (seq children)) (compile-body elem)
+          (d/+special-keywords+ kw)                      (compile-special kw opts)
+          (seq children)                                  (compile-body elem)
+          :else                                           (compile-simple kw opts))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

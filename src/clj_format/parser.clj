@@ -9,7 +9,7 @@
     (parse-format \"Hello ~A!\")      ;=> [\"Hello \" :str \"!\"]
     (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
     (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
-    (parse-format \"~:(~A~)\")       ;=> [[:capitalize :str]]"
+    (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
   (:require [clj-format.directives :as d]))
 
 
@@ -27,16 +27,16 @@
   "Parse a signed integer at pos. Returns [value end-pos] or nil."
   [^String s ^long pos]
   (when (< pos (.length s))
-    (let [c          (.charAt s pos)
-          signed     (or (= c \+) (= c \-))
-          digit-start (long (if signed (inc pos) pos))
-          end        (loop [i digit-start]
-                       (if (and (< i (.length s))
-                                (Character/isDigit (.charAt s i)))
-                         (recur (inc i))
-                         i))]
-      (when (> end digit-start)
-        [(Long/parseLong (.substring s (int pos) (int end))) end]))))
+    (let [c           (.charAt s pos)
+          signed?     (or (= c \+) (= c \-))
+          digit-start (long (if signed? (inc pos) pos))
+          digit-end   (loop [i digit-start]
+                        (if (and (< i (.length s))
+                                 (Character/isDigit (.charAt s i)))
+                          (recur (inc i))
+                          i))]
+      (when (> digit-end digit-start)
+        [(Long/parseLong (.substring s (int pos) (int digit-end))) digit-end]))))
 
 (defn- skip-whitespace
   "Advance pos past any spaces and tabs."
@@ -57,31 +57,28 @@
    Returns [value end-pos] or nil if no param found."
   [^String s ^long pos]
   (when-let [c (char-at s pos)]
-    (cond
-      (= c \')                  [(.charAt s (inc pos)) (+ pos 2)]
-      (or (= c \V) (= c \v))   [:V (inc pos)]
-      (= c \#)                  [:# (inc pos)]
-      true                      (parse-int s pos))))
+    (case c
+      \'              [(.charAt s (inc pos)) (+ pos 2)]
+      (\V \v)         [:V (inc pos)]
+      \#              [:# (inc pos)]
+      (parse-int s pos))))
 
 (defn- parse-params
   "Parse comma-separated directive parameters after a tilde.
    Parameters may be integers, 'char literals, V (arg value), # (arg count),
    or omitted (nil). Returns [param-vec end-pos]."
   [^String s ^long pos]
-  (let [has-param (some? (parse-one-param s pos))
-        has-comma (= (char-at s pos) \,)]
-    (if-not (or has-param has-comma)
+  (let [[first-val first-end] (or (parse-one-param s pos)
+                                  (when (= (char-at s pos) \,)
+                                    [nil pos]))]
+    (if (nil? first-end)
       [[] pos]
-      (let [[first-val first-end] (if-let [[v p] (parse-one-param s pos)]
-                                    [v p]
-                                    [nil pos])]
-        (loop [pos (long first-end), params [first-val]]
-          (if (= (char-at s pos) \,)
-            (let [next-pos (inc pos)]
-              (if-let [[v p] (parse-one-param s next-pos)]
-                (recur (long p) (conj params v))
-                (recur next-pos (conj params nil))))
-            [params pos]))))))
+      (loop [pos (long first-end), params [first-val]]
+        (if (= (char-at s pos) \,)
+          (let [next (inc pos)
+                [v p] (or (parse-one-param s next) [nil next])]
+            (recur (long p) (conj params v)))
+          [params pos])))))
 
 (defn- parse-flags
   "Parse colon and at-sign modifier flags.
@@ -96,42 +93,27 @@
          at    (assoc :at true))
        pos])))
 
+(defn- colon-at-dispatch
+  "Dispatch on :colon/:at flag combination. Returns one of four values."
+  [flags both colon at neither]
+  (let [c (:colon flags), a (:at flags)]
+    (cond
+      (and c a) both
+      c         colon
+      a         at
+      :else     neither)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; DSL Form Construction
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- positional->named
-  "Convert positional params to a named map using the given name list.
-   Nil values are omitted."
-  [param-names params]
-  (into {}
-        (keep-indexed (fn [i v]
-                        (when (and (some? v) (< i (count param-names)))
-                          [(nth param-names i) v])))
-        params))
-
-(defn- translate-flags
-  "Translate raw colon/at flags to semantic options using a flag-map.
-   flag-map is {:colon [key val], :at [key val]}."
-  [raw-flags flag-map]
-  (reduce-kv (fn [m flag-key [opt-key opt-val]]
-               (if (get raw-flags flag-key)
-                 (assoc m opt-key opt-val)
-                 m))
-             {} flag-map))
-
 (defn- build-simple-directive
   "Build a DSL form for a simple directive using its config entry.
    Returns bare keyword when no opts, or [keyword opts-map] when present."
-  [config positional-params raw-flags]
-  (let [{:keys [kw params flags]} config
-        named (positional->named params positional-params)
-        flag-opts (translate-flags raw-flags flags)
-        opts (merge named flag-opts)]
-    (if (seq opts)
-      [kw opts]
-      kw)))
+  [{:keys [kw] :as config} positional-params raw-flags]
+  (let [opts (d/raw->opts config positional-params raw-flags)]
+    (if (seq opts) [kw opts] kw)))
 
 (defn- inline-clause
   "Convert a body-elements vector to a single inline clause value.
@@ -173,32 +155,23 @@
   "~R dispatches to :cardinal, :ordinal, :roman, :old-roman, or :radix."
   [params raw-flags]
   (if (seq params)
-    (let [named (positional->named (d/param-names :radix) params)
-          flag-opts (translate-flags raw-flags (d/flag-rules :radix))
-          opts (merge named flag-opts)]
+    (let [opts (d/raw->opts :radix params raw-flags)]
       (if (seq opts) [:radix opts] :radix))
-    (cond
-      (and (:colon raw-flags) (:at raw-flags)) :old-roman
-      (:colon raw-flags)                        :ordinal
-      (:at raw-flags)                           :roman
-      true                                      :cardinal)))
+    (colon-at-dispatch raw-flags :old-roman :ordinal :roman :cardinal)))
 
 (defn- translate-goto
   "~* dispatches to :skip, :back, or :goto based on flags."
   [params raw-flags]
-  (let [kw (cond (:at raw-flags) :goto, (:colon raw-flags) :back, true :skip)
-        named (positional->named (d/param-names kw) params)]
-    (if (seq named) [kw named] kw)))
+  (let [kw   (colon-at-dispatch raw-flags :goto :back :goto :skip)
+        opts (d/raw->opts kw params {})]
+    (if (seq opts) [kw opts] kw)))
 
 (defn- translate-break
   "~_ dispatches to [:break {:mode m}] or bare :break."
   [raw-flags]
-  (let [mode (cond
-               (and (:colon raw-flags) (:at raw-flags)) :mandatory
-               (:colon raw-flags)                        :fill
-               (:at raw-flags)                           :miser
-               true                                      nil)]
-    (if mode [:break {:mode mode}] :break)))
+  (if-let [mode (colon-at-dispatch raw-flags :mandatory :fill :miser nil)]
+    [:break {:mode mode}]
+    :break))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -216,9 +189,9 @@
   (let [n (count elements)]
     (if (and (>= n 2)
              (= :stop (nth elements (- n 2)))
-             (string? (nth elements (- n 1)))
-             (= 1 (count (filter #(= :stop %) elements))))
-      [(subvec elements 0 (- n 2)) (nth elements (- n 1))]
+             (string? (peek elements))
+             (= 1 (count (filter #{:stop} elements))))
+      [(subvec elements 0 (- n 2)) (peek elements)]
       [elements nil])))
 
 (defn- merge-case-into
@@ -227,20 +200,18 @@
    a :case option — avoiding double-wrapping)."
   [element mode]
   (cond
-    ;; Bare keyword like :str -> [:str {:case mode}]
     (keyword? element)
     [element {:case mode}]
 
-    ;; Directive or compound vector — merge :case into opts
     (and (vector? element) (keyword? (first element)))
-    (if (and (> (count element) 1) (map? (nth element 1)))
-      (if (:case (nth element 1))
-        nil ;; already has :case, can't merge
-        (assoc element 1 (assoc (nth element 1) :case mode)))
-      (into [(first element) {:case mode}] (subvec element 1)))
+    (let [[kw & body] element
+          [opts children] (if (map? (first body))
+                            [(first body) (rest body)]
+                            [{} body])]
+      (when-not (:case opts)
+        (into [kw (assoc opts :case mode)] children)))
 
-    ;; String or unknown — can't merge
-    true nil))
+    :else nil))
 
 (defn- parse-choose
   "Parse ~[...~;...~] as numeric dispatch."
@@ -262,9 +233,8 @@
   "Parse ~:[false~;true~] — reverses clause order to true-first."
   [^String s ^long pos]
   (let [[false-body pos _ _] (parse-body s pos #{\] \;})
-        [true-body pos _ _]  (parse-body s pos #{\]})
-        form (into [:if] (mapv inline-clause [true-body false-body]))]
-    [form pos]))
+        [true-body  pos _ _] (parse-body s pos #{\]})]
+    [(into [:if] (mapv inline-clause [true-body false-body])) pos]))
 
 (defn- parse-when
   "Parse ~@[body~] as truthiness guard."
@@ -275,20 +245,16 @@
 (defn- parse-each
   "Parse ~{...~} as iteration."
   [^String s ^long pos open-flags open-params]
-  (let [[elements pos _term term-flags] (parse-body s pos #{\}})
+  (let [[elements pos _ term-flags] (parse-body s pos #{\}})
         [elements sep] (detect-sep elements)
-        from (cond
-               (and (:colon open-flags) (:at open-flags)) :rest-sublists
-               (:colon open-flags)                         :sublists
-               (:at open-flags)                            :rest
-               true                                        nil)
-        max-val (first open-params)
-        force   (:colon term-flags)
         opts (cond-> {}
-               sep     (assoc :sep sep)
-               from    (assoc :from from)
-               max-val (assoc :max max-val)
-               force   (assoc :min 1))]
+               sep                   (assoc :sep sep)
+               (seq open-params)     (assoc :max (first open-params))
+               (:colon term-flags)   (assoc :min 1))
+        opts (if-let [from (colon-at-dispatch open-flags
+                             :rest-sublists :sublists :rest nil)]
+               (assoc opts :from from)
+               opts)]
     [(make-body-compound :each opts elements) pos]))
 
 (defn- parse-case-conversion
@@ -296,16 +262,10 @@
    element; falls back to compound form for multi-element bodies."
   [^String s ^long pos open-flags]
   (let [[elements pos _ _] (parse-body s pos #{\)})
-        mode (cond
-               (and (:colon open-flags) (:at open-flags)) :upcase
-               (:colon open-flags)                         :capitalize
-               (:at open-flags)                            :titlecase
-               true                                        :downcase)]
-    (if (= 1 (count elements))
-      (if-let [merged (merge-case-into (first elements) mode)]
-        [merged pos]
-        [(make-body-compound mode {} elements) pos])
-      [(make-body-compound mode {} elements) pos])))
+        mode (colon-at-dispatch open-flags :upcase :capitalize :titlecase :downcase)
+        merged (when (= 1 (count elements))
+                 (merge-case-into (first elements) mode))]
+    [(or merged (make-body-compound mode {} elements)) pos]))
 
 (defn- parse-justification
   "Parse ~<...~;...~> as justification or logical block."
@@ -314,19 +274,18 @@
     (let [[elements pos term-char term-flags] (parse-body s pos #{\> \;})]
       (if (= term-char \;)
         (recur pos (conj clauses elements))
-        (let [all-clauses    (conj clauses elements)
-              logical-block? (:colon term-flags)
-              kw             (if logical-block? :logical-block :justify)
-              param-names    (if logical-block? [] [:width :pad-step :min-pad :fill])
-              named          (positional->named param-names open-params)
-              flag-opts      (if logical-block?
-                               (cond-> {}
-                                 (:colon open-flags) (assoc :colon true))
-                               (cond-> {}
-                                 (:colon open-flags) (assoc :pad-before true)
-                                 (:at open-flags)    (assoc :pad-after true)))
-              opts           (merge named flag-opts)]
-          [(make-clause-compound kw opts all-clauses) pos])))))
+        (let [all-clauses (conj clauses elements)
+              logical?    (:colon term-flags)
+              kw          (if logical? :logical-block :justify)
+              named       (d/positional->named
+                            (if logical? [] [:width :pad-step :min-pad :fill])
+                            open-params)
+              flag-opts   (if logical?
+                            (cond-> {} (:colon open-flags) (assoc :colon true))
+                            (cond-> {}
+                              (:colon open-flags) (assoc :pad-before true)
+                              (:at open-flags)    (assoc :pad-after true)))]
+          [(make-clause-compound kw (merge named flag-opts) all-clauses) pos])))))
 
 (defn- parse-compound
   "Parse a compound directive. Returns [dsl-form end-pos]."
@@ -336,7 +295,7 @@
       \[ (cond
            (:colon flags) (parse-if s pos)
            (:at flags)    (parse-when s pos)
-           true           (parse-choose s pos (positional->named [:selector] params)))
+           :else          (parse-choose s pos (d/positional->named [:selector] params)))
       \{ (parse-each s pos flags params)
       \( (parse-case-conversion s pos flags)
       \< (parse-justification s pos params flags))))
@@ -351,26 +310,21 @@
         c            (char-at s pos)
         pos          (inc pos)]
     (cond
-      ;; Compound opening bracket
       (#{\[ \{ \( \<} c)
       (parse-compound s pos c params flags)
 
-      ;; Tilde-newline: format string layout control
-      ;; Plain and colon variants skip the newline (produce no output).
-      ;; At variant emits a newline. Whitespace after is consumed for
-      ;; plain and at; preserved for colon.
+      ;; Tilde-newline: plain/colon produce no output, at emits newline.
+      ;; Plain and at consume trailing whitespace; colon preserves it.
       (= c \newline)
       (let [pos (if (:colon flags) pos (skip-whitespace s pos))]
         (if (:at flags) [:nl pos] [nil pos]))
 
-      ;; Special dispatch: R, *, _ — keyword depends on flags
-      true
+      :else
       (let [uc (Character/toUpperCase ^char c)]
         (case uc
           \R [(translate-radix params flags) pos]
           \* [(translate-goto params flags) pos]
           \_ [(translate-break flags) pos]
-          ;; Standard simple directive via shared config
           (if-let [config (get d/+char->simple+ uc)]
             [(build-simple-directive config params flags) pos]
             (throw (ex-info (str "Unknown directive character: " c)
@@ -386,7 +340,7 @@
       [elements pos nil nil]
       (let [c (.charAt s pos)]
         (if (= c \~)
-          ;; Peek ahead for terminator
+          ;; Peek ahead to check for terminator before full parse
           (let [peek-pos              (inc pos)
                 [_params peek-pos]    (parse-params s peek-pos)
                 [peek-flags peek-pos] (parse-flags s peek-pos)
@@ -394,9 +348,7 @@
             (if (contains? terminators peek-char)
               [elements (inc peek-pos) peek-char peek-flags]
               (let [[form end-pos] (parse-directive s (inc pos))]
-                (if (some? form)
-                  (recur end-pos (conj elements form))
-                  (recur end-pos elements)))))
+                (recur end-pos (cond-> elements form (conj form))))))
           ;; Literal text — accumulate until next tilde or end
           (let [end (loop [i pos]
                       (if (and (< i (.length s)) (not= (.charAt s i) \~))
@@ -424,5 +376,4 @@
      (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
      (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
   [^String s]
-  (let [[elements _ _ _] (parse-body s 0 #{})]
-    elements))
+  (first (parse-body s 0 #{})))

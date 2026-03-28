@@ -21,10 +21,10 @@
     - a Writer    — writes to that writer, returns nil
 
   Examples:
-    (clj-format nil \"~D item~:P\" 5)                       ;; => \"5 items\"
+    (clj-format nil \"~D item~:P\" 5)                            ;; => \"5 items\"
     (clj-format nil [:int \" item\" [:plural {:rewind true}]] 5) ;; => \"5 items\"
-    (clj-format nil [:each {:sep \", \"} :str] [1 2 3])     ;; => \"1, 2, 3\"
-    (clj-format true \"Hello ~A!\" \"world\")                ;; prints, returns nil"
+    (clj-format nil [:each {:sep \", \"} :str] [1 2 3])          ;; => \"1, 2, 3\"
+    (clj-format true \"Hello ~A!\" \"world\")                    ;; prints, returns nil"
   [writer fmt & args]
   (let [fmt-str (cond
                   (string? fmt)  fmt
