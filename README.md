@@ -1,0 +1,221 @@
+# clj-format
+
+A Clojure DSL for `clojure.pprint/cl-format`.
+
+cl-format is extraordinarily powerful — it handles comma-grouped integers, Roman
+numerals, English number words, conditional pluralization, justified text,
+iteration with separators, and much more. But its format strings are notoriously
+hard to read:
+
+```clojure
+(cl-format nil "~:{~:(~A~): ~:[baz~;~A~]~%~}" data)
+```
+
+clj-format lets you write the same thing as a Clojure data structure:
+
+```clojure
+(clj-format nil
+  [:each {:from :sublists}
+    [:str {:case :capitalize}] ": " [:if :str "baz"] :nl]
+  data)
+```
+
+When given a string, clj-format passes it directly to cl-format — full
+backward compatibility, zero migration cost.
+
+## Quick Start
+
+```clojure
+(require '[clj-format.core :as fmt])
+
+;; String passthrough — identical to cl-format
+(fmt/clj-format nil "~D item~:P" 5)
+;; => "5 items"
+
+;; DSL form — same result, readable syntax
+(fmt/clj-format nil [:int " item" [:plural {:rewind true}]] 5)
+;; => "5 items"
+```
+
+## The DSL
+
+The DSL follows the [Hiccup convention](https://github.com/weavejester/hiccup):
+`[:keyword optional-opts-map & body]`. Bare keywords are shorthand for
+directives with no options. Strings are literal text.
+
+### Basics
+
+```clojure
+;; Print values
+[:str]                          ;; => ~A  (human readable)
+[:pr]                           ;; => ~S  (readable with quotes)
+
+;; Bare keywords in a body
+["Name: " :str ", Age: " :int] ;; => "Name: ~A, Age: ~D"
+
+;; Options in a map
+[:int {:width 8 :fill \0}]     ;; => ~8,'0D
+[:str {:width 20 :pad :left}]  ;; => ~20@A
+```
+
+### Numbers
+
+```clojure
+:int                                  ;; decimal
+:bin :oct :hex                        ;; other bases
+[:int {:group true}]                  ;; comma-grouped: 1,000,000
+[:int {:sign :always}]                ;; always show sign: +42
+[:hex {:width 4 :fill \0}]           ;; zero-padded hex: 00ff
+
+:cardinal                             ;; "forty-two"
+:ordinal                              ;; "forty-second"
+:roman                                ;; "XLII"
+
+[:float {:width 8 :decimals 2}]      ;; fixed-point
+:money                                ;; monetary: 3.14
+```
+
+### Iteration
+
+```clojure
+;; Comma-separated list
+[:each {:sep ", "} :str]                    ;; ~{~A~^, ~}
+
+;; Iterate sublists
+[:each {:from :sublists} :str ": " :int]    ;; ~:{~A: ~D~}
+
+;; From remaining args
+[:each {:sep ", " :from :rest} :str]        ;; ~@{~A~^, ~}
+```
+
+### Conditionals
+
+```clojure
+;; Boolean (true clause first)
+[:if "yes" "no"]                            ;; ~:[no~;yes~]
+
+;; Truthiness guard
+[:when "value: " :str]                      ;; ~@[value: ~A~]
+
+;; Numeric dispatch
+[:choose "zero" "one" "two"]                ;; ~[zero~;one~;two~]
+[:choose {:default "many"} "zero" "one"]    ;; ~[zero~;one~:;many~]
+```
+
+### Case Conversion
+
+Applied as a `:case` option — no extra nesting:
+
+```clojure
+[:str {:case :capitalize}]                  ;; ~:(~A~) Capitalize Each Word
+[:str {:case :upcase}]                      ;; ~:@(~A~) ALL CAPS
+[:each {:sep ", " :case :capitalize} :str]  ;; capitalize a whole list
+```
+
+### Pluralization
+
+```clojure
+[:int " item" [:plural {:rewind true}]]     ;; "5 items" / "1 item"
+[:int " famil" [:plural {:rewind true :form :ies}]]  ;; "1 family" / "2 families"
+```
+
+### Layout
+
+```clojure
+:nl                                   ;; newline
+:fresh                                ;; newline only if not at column 0
+[:tab {:col 20}]                      ;; tab to column 20
+:tilde                                ;; literal ~
+```
+
+### Navigation
+
+```clojure
+:skip                                 ;; skip forward one arg
+[:back {:n 2}]                        ;; back up two args
+[:goto {:n 0}]                        ;; jump to arg 0
+```
+
+## Real-World Examples
+
+### Date formatting
+```clojure
+(clj-format nil [[:int {:width 4 :fill \0}] "-"
+                 [:int {:width 2 :fill \0}] "-"
+                 [:int {:width 2 :fill \0}]]
+  2005 6 10)
+;; => "2005-06-10"
+```
+
+### Search results with grammar
+```clojure
+;; "There are 3 results: 46, 38, 22"
+;; "There is 1 result: 46"
+(clj-format nil
+  ["There " [:choose {:default "are"} "are" "is"] :back
+   " " :int " result" [:plural {:rewind true}] ": "
+   [:each {:sep ", "} :int]]
+  n results)
+```
+
+### XML tag formatter
+```clojure
+(clj-format nil
+  ["<" :str [:each :stop " " :str "=\"" :str "\""] [:if "/" nil] ">" :nl]
+  "img" ["src" "cat.jpg" "alt" "cat"] true)
+;; => "<img src=\"cat.jpg\" alt=\"cat\"/>\n"
+```
+
+### Lowercase Roman numerals
+```clojure
+(clj-format nil [[:roman {:case :downcase}]] 42)
+;; => "xlii"
+```
+
+## Parsing and Compiling
+
+```clojure
+(require '[clj-format.parser :refer [parse-format]]
+         '[clj-format.compiler :refer [compile-format]])
+
+;; Parse a format string into the DSL
+(parse-format "~{~A~^, ~}")
+;; => [[:each {:sep ", "} :str]]
+
+;; Compile DSL back to a format string
+(compile-format [[:each {:sep ", "} :str]])
+;; => "~{~A~^, ~}"
+
+;; Round-trip
+(= s (compile-format (parse-format s)))  ;; true for any valid format string
+```
+
+## DSL Reference
+
+See [doc/dsl.md](doc/dsl.md) for the complete DSL reference covering all
+33 cl-format directives.
+
+## Development
+
+```
+lein test                              # run all tests
+lein test clj-format.parser-test       # parser tests
+lein test clj-format.compiler-test     # compiler + round-trip tests
+lein test clj-format.equivalence-test  # cl-format output equivalence
+lein repl                              # start a REPL
+```
+
+## License
+
+Copyright 2026
+
+This program and the accompanying materials are made available under the
+terms of the Eclipse Public License 2.0 which is available at
+https://www.eclipse.org/legal/epl-2.0.
+
+This Source Code may also be made available under the following Secondary
+Licenses when the conditions for such availability set forth in the Eclipse
+Public License, v. 2.0 are satisfied: GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or (at your
+option) any later version, with the GNU Classpath Exception which is available
+at https://www.gnu.org/software/classpath/license.html.
