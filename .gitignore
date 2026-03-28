@@ -13,3 +13,4 @@ pom.xml.asc
 .hg/
 CLAUDE.md
 PLAN.md
+settings.local.json
