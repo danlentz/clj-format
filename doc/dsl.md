@@ -42,6 +42,58 @@ are also accepted:
 [:str {:width :#}]                ;; ~#A  — width = remaining arg count
 ```
 
+## Argument Consumption
+
+When reading a format body, it helps to know which directives consume
+arguments and which don't. The rule of thumb: **directives that name a
+data type consume an argument; directives that name an action don't.**
+
+### Consume one argument (print it)
+
+| Keyword | What it prints |
+|---------|---------------|
+| `:str` | Any value, human-readable |
+| `:pr` | Any value, readable form |
+| `:write` | Any value, via pprint |
+| `:char` | A character |
+| `:int` `:bin` `:oct` `:hex` | An integer in the given base |
+| `:radix` | An integer in an arbitrary base |
+| `:cardinal` `:ordinal` | An integer as English words |
+| `:roman` `:old-roman` | An integer as Roman numerals |
+| `:float` `:exp` `:gfloat` | A floating-point number |
+| `:money` | A floating-point number as currency |
+| `:plural` | An integer (tests it for "s"/"ies", doesn't print it) |
+
+### Consume no arguments (layout and control)
+
+| Keyword | What it does |
+|---------|-------------|
+| `:nl` `:fresh` `:page` | Emit whitespace / page breaks |
+| `:tab` | Move to a column position |
+| `:tilde` | Emit literal `~` |
+| `:stop` | Exit iteration or format |
+| `:break` | Conditional newline (pretty printer) |
+| `:indent` | Set indentation (pretty printer) |
+
+### Modify the argument pointer (don't print)
+
+| Keyword | What it does |
+|---------|-------------|
+| `:skip` | Advance past arguments without printing |
+| `:back` | Move the argument pointer backward |
+| `:goto` | Jump to an absolute argument position |
+
+### Special
+
+| Keyword | Consumption |
+|---------|------------|
+| `:recur` | Consumes a format string + an argument list (or shares parent args with `{:from :rest}`) |
+| `:each` | Consumes a list argument (or remaining args with `{:from :rest}`) and iterates |
+| `:when` | Consumes one argument (tests truthiness), body may consume more |
+| `:if` | Consumes one argument (tests truthiness), selected clause may consume more |
+| `:choose` | Consumes one argument (as index), selected clause may consume more |
+| `:case` option | Consumes nothing extra — wraps output of the directive it's attached to |
+
 ## Directive Reference
 
 ### Output
