@@ -1,0 +1,38 @@
+# Successful Lisp - Chapter 24: FORMAT Speaks a Different Language
+
+## Overview
+
+This chapter explores Lisp's `FORMAT` function, a comprehensive text formatting system inspired by FORTRAN. The function enables sophisticated output control, including number formatting, case conversion, list iteration, and conditional text display.
+
+## Key Concepts
+
+**Basic Syntax**
+The `FORMAT` function accepts three main components: a destination argument, a format control string containing directives (prefixed with `~`), and zero or more values to format.
+
+**Destination Options**
+- `T` sends output to standard output
+- `NIL` returns formatted text as a string
+- A string with fill-pointer capability accepts appended output
+- Specific output streams are also supported
+
+**Whitespace Directives**
+The function provides directives for line breaks (`~%`), fresh lines (`~&`), page breaks (`~|`), and tab stops (`~nT`).
+
+**Numeric Formatting**
+Multiple number representation options exist: decimal (`~D`), binary (`~B`), octal (`~O`), hexadecimal (`~X`), arbitrary base (`~bR`), spelled-out cardinal numbers (`~R`), ordinal numbers (`~:R`), and Roman numerals (`~@R`). Field width and padding customization are available.
+
+**Text Processing**
+The `~A` directive formats data visually without escape characters, while `~S` produces reader-compatible output. Case conversion uses `~(` and `~)` delimiters with various modifiers.
+
+**List Iteration**
+The `~{` and `~}` directives iterate through list elements, with `~^` enabling early termination when arguments exhaust.
+
+**Conditional Formatting**
+Three conditional forms exist: ordinal selection (`~[...~]`), binary choice (`~:[...~]`), and argument-testing conditions (`~@[...~]`).
+
+**Dynamic Parameters**
+Using `V` in directive parameters allows runtime value specification from the argument list.
+
+---
+
+Source: https://dept-info.labri.fr/~strandh/Teaching/MTP/Common/David-Lamkins/chapter24.html

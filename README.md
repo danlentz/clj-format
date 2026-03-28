@@ -172,23 +172,69 @@ Applied as a `:case` option — no extra nesting:
 ;; => "xlii"
 ```
 
-## Parsing and Compiling
+## API
+
+### `clj-format.core/clj-format`
 
 ```clojure
-(require '[clj-format.parser :refer [parse-format]]
-         '[clj-format.compiler :refer [compile-format]])
-
-;; Parse a format string into the DSL
-(parse-format "~{~A~^, ~}")
-;; => [[:each {:sep ", "} :str]]
-
-;; Compile DSL back to a format string
-(compile-format [[:each {:sep ", "} :str]])
-;; => "~{~A~^, ~}"
-
-;; Round-trip
-(= s (compile-format (parse-format s)))  ;; true for any valid format string
+(clj-format writer fmt & args)
 ```
+
+Drop-in replacement for `clojure.pprint/cl-format`.
+
+**`writer`** — output destination:
+- `nil` or `false` — return formatted string
+- `true` — print to `*out*`, return nil
+- a `java.io.Writer` — write to it, return nil
+
+**`fmt`** — format specification:
+- **string** — passed directly to `cl-format` (full backward compatibility)
+- **vector** — compiled from DSL to a format string, then passed to `cl-format`
+- **keyword** — shorthand for a single bare directive (e.g., `:str` for `~A`)
+
+```clojure
+(clj-format nil "~D item~:P" 5)                            ;; => "5 items"
+(clj-format nil [:int " item" [:plural {:rewind true}]] 5) ;; => "5 items"
+(clj-format nil :cardinal 42)                               ;; => "forty-two"
+```
+
+### `clj-format.parser/parse-format`
+
+```clojure
+(parse-format s)
+```
+
+Parse a cl-format format string into the DSL. Returns a vector of elements:
+literal strings, bare keywords (simple directives), and vectors (directives
+with options or compound directives).
+
+```clojure
+(parse-format "~A")             ;=> [:str]
+(parse-format "Hello ~A!")      ;=> ["Hello " :str "!"]
+(parse-format "~{~A~^, ~}")    ;=> [[:each {:sep ", "} :str]]
+(parse-format "~:[no~;yes~]")  ;=> [[:if "yes" "no"]]
+(parse-format "~:(~A~)")       ;=> [[:str {:case :capitalize}]]
+```
+
+### `clj-format.compiler/compile-format`
+
+```clojure
+(compile-format dsl-body)
+```
+
+Compile a DSL body vector into a cl-format format string. The inverse of
+`parse-format`. Accepts the same element types that `parse-format` produces:
+strings, bare keywords, and directive vectors.
+
+```clojure
+(compile-format [:str])                       ;=> "~A"
+(compile-format ["Hello " :str "!"])          ;=> "Hello ~A!"
+(compile-format [[:each {:sep ", "} :str]])   ;=> "~{~A~^, ~}"
+(compile-format [[:if "yes" "no"]])           ;=> "~:[no~;yes~]"
+```
+
+Round-trip fidelity: `(= s (compile-format (parse-format s)))` holds for
+any valid format string.
 
 ## Documentation
 
