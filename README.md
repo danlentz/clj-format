@@ -190,20 +190,68 @@ Applied as a `:case` option — no extra nesting:
 (= s (compile-format (parse-format s)))  ;; true for any valid format string
 ```
 
-## DSL Reference
+## Documentation
 
-See [doc/dsl.md](doc/dsl.md) for the complete DSL reference covering all
-33 cl-format directives.
+- [doc/dsl.md](doc/dsl.md) — complete DSL reference covering all 33
+  cl-format directives
+- [doc/examples.md](doc/examples.md) — 50+ side-by-side comparisons of
+  cl-format strings and their DSL equivalents
 
 ## Development
 
 ```
 lein test                              # run all tests
+lein test clj-format.core-test        # API mechanics
 lein test clj-format.parser-test       # parser tests
 lein test clj-format.compiler-test     # compiler + round-trip tests
-lein test clj-format.equivalence-test  # cl-format output equivalence
+lein test clj-format.examples-test     # cl-format output equivalence
 lein repl                              # start a REPL
 ```
+
+## Background and References
+
+The FORMAT facility originated in MIT Lisp Machine Lisp and was
+standardized as part of Common Lisp. clj-format builds on the Clojure
+implementation in `clojure.pprint/cl-format`.
+
+### Specification
+
+- **Common Lisp the Language, 2nd Edition (CLtL2)** — Guy L. Steele Jr.,
+  1990. Chapter 22.3.3, "Formatted Output to Character Streams."
+  https://www.cs.cmu.edu/Groups/AI/html/cltl/clm/node200.html
+
+- **Common Lisp HyperSpec** — the authoritative language reference.
+  Section 22.3, "Formatted Output."
+  http://www.lispworks.com/documentation/HyperSpec/Body/22_c.htm
+
+- **ANSI Common Lisp Standard (X3.226-1994)** — the formal standard
+  that defines FORMAT. The HyperSpec is derived from this document.
+
+### Clojure Implementation
+
+- **clojure.pprint/cl-format** — Tom Faulhaber's implementation of
+  Common Lisp FORMAT for Clojure, included in Clojure core since 1.2.
+  100% compatible with the CLtL2 specification (with minor exceptions
+  documented at the link below).
+  https://clojure.github.io/clojure/doc/clojure/pprint/CommonLispFormat.html
+
+- **ClojureDocs cl-format page** — community-contributed examples.
+  https://clojuredocs.org/clojure.pprint/cl-format
+
+### Examples and Tutorials
+
+- **Practical Common Lisp** — Peter Seibel, 2005. Chapter 18, "A Few
+  FORMAT Recipes." The source of the famous English list formatter,
+  the elf/elves irregular plural trick, and the search results example.
+  https://gigamonkeys.com/book/a-few-format-recipes.html
+
+- **Successful Lisp** — David B. Lamkins, 2004. Chapter 24 covers
+  FORMAT with additional examples.
+  https://dept-info.labri.fr/~strandh/Teaching/MTP/Common/David-Lamkins/chapter24.html
+
+- **HexstreamSoft FORMAT Reference** — a well-organized directive-by-directive
+  reference with cross-links.
+  https://www.hexstreamsoft.com/articles/common-lisp-format-reference/
 
 ## License
 
