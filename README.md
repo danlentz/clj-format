@@ -23,6 +23,9 @@ clj-format lets you write the same thing as a Clojure data structure:
 When given a string, clj-format passes it directly to cl-format — full
 backward compatibility, zero migration cost.
 
+See [50+ side-by-side examples](doc/examples.md) from Practical Common
+Lisp, CLtL2, and the CL HyperSpec.
+
 ## Quick Start
 
 ```clojure
@@ -41,7 +44,8 @@ backward compatibility, zero migration cost.
 
 The DSL follows the [Hiccup convention](https://github.com/weavejester/hiccup):
 `[:keyword optional-opts-map & body]`. Bare keywords are shorthand for
-directives with no options. Strings are literal text.
+directives with no options. Strings are literal text. The complete
+[DSL reference](doc/dsl.md) covers all 33 cl-format directives.
 
 There are two common vector shapes:
 - A single directive vector like `[:str]` or `[:int {:width 8}]`
@@ -259,13 +263,6 @@ any valid format string.
 When `compile-format` rejects an invalid DSL form it throws
 `ExceptionInfo` with structured `ex-data` describing the compile-phase
 error.
-
-## Documentation
-
-- [doc/dsl.md](doc/dsl.md) — complete DSL reference covering all 33
-  cl-format directives
-- [doc/examples.md](doc/examples.md) — 50+ side-by-side comparisons of
-  cl-format strings and their DSL equivalents
 
 ## Development
 
