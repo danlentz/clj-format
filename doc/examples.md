@@ -50,6 +50,17 @@ Otherwise the rest of the vector is treated as body content.
 ;; => "       foo"
 ```
 
+### Character names and readable literals
+
+```clojure
+(cl-format  nil "~:C ~@C ~:@C" \newline \space \newline)
+(clj-format nil [[:char {:name true}] " "
+                 [:char {:readable true}] " "
+                 [:char {:name true :readable true}]]
+            \newline \space \newline)
+;; => "Newline \\space Newline"
+```
+
 ## Integer Formatting
 
 ### Comma-grouped

@@ -65,6 +65,8 @@ and `[:str]` are valid ways to express `~A`, depending on context.
 ;; Options in a map
 [:int {:width 8 :fill \0}]     ;; => ~8,'0D
 [:str {:width 20 :pad :left}]  ;; => ~20@A
+[:char {:name true}]           ;; => ~:C   character name
+[:char {:readable true}]       ;; => ~@C   readable char literal
 ```
 
 ### Numbers
