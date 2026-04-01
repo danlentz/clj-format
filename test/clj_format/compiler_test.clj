@@ -131,5 +131,21 @@
 (deftest compile-each-separator-escaping-test
   (is (= "~{~A~^~~~}" (compile-format [[:each {:sep "~"} :str]]))))
 
+(deftest compile-invalid-dsl-test
+  (doseq [[dsl kind]
+          [[[:bogus] :unknown-directive]
+           [[[:str 1]] :invalid-element]
+           [[[:if]] :invalid-child-count]
+           [[[:downcase {:foo true} :str]] :invalid-options]
+           [[1] :invalid-element]
+           [42 :invalid-root]]]
+    (try
+      (compile-format dsl)
+      (is false (str "expected ExceptionInfo for " (pr-str dsl)))
+      (catch clojure.lang.ExceptionInfo e
+        (is (= :clj-format (:library (ex-data e))) (pr-str dsl))
+        (is (= :compile (:phase (ex-data e))) (pr-str dsl))
+        (is (= kind (:kind (ex-data e))) (pr-str dsl))))))
+
 (deftest round-trip-tilde-test
   (is (= "a~~b" (round-trip "a~~b"))))

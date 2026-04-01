@@ -5,12 +5,16 @@
   and produces the equivalent cl-format string.
 
   Examples:
+    (compile-format :str)                       => \"~A\"
     (compile-format [:str])                      => \"~A\"
     (compile-format [\"Hello \" :str \"!\"])      => \"Hello ~A!\"
+    (compile-format [:cardinal \" file\" [:plural {:rewind true}]])
+                                                  => \"~R file~:P\"
     (compile-format [[:each {:sep \", \"} :str]]) => \"~{~A~^, ~}\"
     (compile-format [[:if \"yes\" \"no\"]])       => \"~:[no~;yes~]\""
   (:require [clojure.string :as str]
-            [clj-format.directives :as d]))
+            [clj-format.directives :as d]
+            [clj-format.errors :as err]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -69,6 +73,58 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Validation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- invalid-dsl
+  "Throw a structured DSL compilation error."
+  [message data]
+  (throw (err/compile-error message data)))
+
+(defn- known-directive?
+  "True when `kw` is a known DSL directive or compound keyword."
+  [kw]
+  (d/known-directive-keyword? kw))
+
+(defn- validate-directive-keyword
+  "Ensure `kw` names a known DSL directive."
+  [kw elem]
+  (when-not (known-directive? kw)
+    (invalid-dsl "Unknown DSL directive keyword"
+                 {:kind :unknown-directive
+                  :directive kw
+                  :element elem})))
+
+(defn- validate-element-type
+  "Ensure a DSL element is one of the supported types."
+  [elem]
+  (when-not (or (string? elem) (keyword? elem) (vector? elem))
+    (invalid-dsl "DSL elements must be strings, keywords, or vectors"
+                 {:kind :invalid-element
+                  :element elem})))
+
+(defn- validate-clause-type
+  "Ensure a compound clause is one of the supported types."
+  [clause]
+  (when-not (or (nil? clause) (string? clause) (keyword? clause) (vector? clause))
+    (invalid-dsl "Directive clauses must be nil, strings, keywords, or vectors"
+                 {:kind :invalid-clause
+                  :clause clause})))
+
+(defn- validate-child-count
+  "Ensure a compound directive receives the expected number of children."
+  [kw children expected elem]
+  (when-not (= expected (count children))
+    (invalid-dsl "Directive received an invalid number of child forms"
+                 {:kind :invalid-child-count
+                  :directive kw
+                  :expected expected
+                  :actual (count children)
+                  :children children
+                  :element elem})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Case Conversion
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -95,13 +151,18 @@
 (defn- compile-body
   "Compile a sequence of DSL elements into a format string."
   [elements]
-  (apply str (map compile-element elements)))
+  (apply str
+         (map (fn [elem]
+                (validate-element-type elem)
+                (compile-element elem))
+              elements)))
 
 (defn- compile-clause
   "Compile a clause value (from :if, :choose, :justify).
    nil -> empty, string -> escaped literal, keyword -> directive,
    vector -> directive or body."
   [clause]
+  (validate-clause-type clause)
   (cond
     (nil? clause)     ""
     (string? clause)  (escape-tildes clause)
@@ -109,7 +170,9 @@
     (vector? clause)  (if (keyword? (first clause))
                         (compile-element clause)
                         (compile-body clause))
-    :else             (str clause)))
+    :else             (invalid-dsl "Unreachable invalid clause"
+                                   {:kind :invalid-clause
+                                    :clause clause})))
 
 (defn- join-clauses
   "Compile clauses and join with ~; separators."
@@ -119,7 +182,7 @@
 (defn- compile-simple
   "Compile a simple (non-compound) directive using shared config."
   [kw opts]
-  (let [{:keys [char params flags]} (d/+directives+ kw)]
+  (let [{:keys [char params flags]} (d/directive-config kw)]
     (maybe-wrap-case opts
       (fn [opts]
         (str "~"
@@ -141,7 +204,7 @@
   "Compile [:each opts? & body] -> ~flags max{ body ~close}"
   [opts body-elements]
   (maybe-wrap-case opts
-    (fn [{:keys [from max min sep] :as opts}]
+    (fn [{:keys [from max min sep]}]
       (let [open-flags (case from
                          :rest "@", :sublists ":", :rest-sublists ":@", nil "")
             body-str   (compile-body body-elements)
@@ -176,7 +239,7 @@
 (defn- compile-justify
   "Compile [:justify opts? & clauses] -> ~params flags<c0~;c1~;...~>"
   [opts clauses]
-  (str "~" (format-params (:params (d/+directives+ :justify)) opts)
+  (str "~" (format-params (:params (d/compound-directive-config :justify)) opts)
        (when (:pad-before opts) ":") (when (:pad-after opts) "@")
        "<" (join-clauses clauses) "~>"))
 
@@ -192,8 +255,10 @@
    Returns [keyword opts children]."
   [v]
   (let [[kw & body] v
-        [opts children] (if (map? (first body))
-                          [(first body) (vec (rest body))]
+        raw-opts        (first body)
+        _               (validate-directive-keyword kw v)
+        [opts children] (if (map? raw-opts)
+                          [raw-opts (vec (rest body))]
                           [{} (vec body)])]
     [kw opts children]))
 
@@ -205,27 +270,46 @@
     (escape-tildes elem)
 
     (keyword? elem)
-    (if (d/+special-keywords+ elem)
-      (compile-special elem {})
-      (str "~" (:char (d/+directives+ elem))))
+    (do
+      (validate-directive-keyword elem elem)
+      (if (d/+special-keywords+ elem)
+        (compile-special elem {})
+        (str "~" (:char (d/directive-config elem)))))
 
     (vector? elem)
     (let [[kw opts children] (parse-hiccup elem)]
       (case kw
         :each          (compile-each opts children)
-        :if            (compile-if opts (first children) (second children))
+        :if            (do
+                         (validate-child-count kw children 2 elem)
+                         (compile-if opts (first children) (second children)))
         :when          (compile-when-cond opts children)
         :choose        (compile-choose opts children)
         :justify       (compile-justify opts children)
         :logical-block (compile-logical-block opts children)
         (:downcase :upcase :capitalize :titlecase)
-                       (wrap-case (compile-body children) kw)
-        ;; Special or simple — if children present, it's a body vector
+        (do
+          (when (seq opts)
+            (invalid-dsl "Case wrapper directives do not accept options"
+                         {:kind :invalid-options
+                          :directive kw
+                          :options opts
+                          :element elem}))
+          (wrap-case (compile-body children) kw))
         (cond
           (and (d/+special-keywords+ kw) (seq children)) (compile-body elem)
           (d/+special-keywords+ kw)                      (compile-special kw opts)
-          (seq children)                                  (compile-body elem)
-          :else                                           (compile-simple kw opts))))))
+          (seq children)                                (compile-body elem)
+          (d/directive-config kw)                       (compile-simple kw opts)
+          :else (invalid-dsl "Unknown directive form"
+                             {:kind :invalid-directive
+                              :directive kw
+                              :element elem}))))
+
+    :else
+    (invalid-dsl "DSL elements must be strings, keywords, or vectors"
+                 {:kind :invalid-element
+                  :element elem})))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -242,6 +326,7 @@
        (keyword? (first v))
        (or (d/+compound-keywords+ (first v))
            (d/+special-keywords+ (first v))
+           (contains? d/+case-keywords+ (first v))
            (<= (count v) 1)
            (map? (second v)))))
 
@@ -254,13 +339,19 @@
      - a bare keyword: :str
 
    Examples:
+     (compile-format :str)                     ;=> \"~A\"
      (compile-format [:str])                     ;=> \"~A\"
      (compile-format [:str {:width 10}])         ;=> \"~10A\"
      (compile-format [\"Hello \" :str \"!\"])     ;=> \"Hello ~A!\"
+     (compile-format [:cardinal \" file\" [:plural {:rewind true}]])
+                                                ;=> \"~R file~:P\"
      (compile-format [:each {:sep \", \"} :str])  ;=> \"~{~A~^, ~}\"
      (compile-format [:if \"yes\" \"no\"])        ;=> \"~:[no~;yes~]\""
   [dsl]
   (cond
-    (keyword? dsl)            (compile-element dsl)
-    (directive-vector? dsl)   (compile-element dsl)
-    :else                     (compile-body dsl)))
+    (keyword? dsl)          (compile-element dsl)
+    (directive-vector? dsl) (compile-element dsl)
+    (vector? dsl)           (compile-body dsl)
+    :else                   (invalid-dsl "DSL root must be a keyword or vector"
+                                         {:kind :invalid-root
+                                          :dsl dsl})))

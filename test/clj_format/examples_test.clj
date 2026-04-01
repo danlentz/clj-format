@@ -317,6 +317,11 @@
 (deftest at-sign-indirect-test
   (equiv "~@? ~D" "<~A ~D>" "Foo" 5 7))
 
+(deftest runtime-template-test
+  (testing "HyperSpec-style shared-arg indirection via ~@?"
+    (equiv "~@? after ~D tries"
+           "~A saved as ~A" "Report" "report.txt" 3)))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tabulation
@@ -389,9 +394,17 @@
 (deftest roman-enumerated-list-test
   (equiv "~:{~@R. ~:(~A~)~%~}" [[1 "first"] [2 "second"] [3 "third"]]))
 
+(deftest roman-enumerated-rest-args-test
+  (testing "Flat rest-arg variant of the Roman numeral list"
+    (equiv "~@{~@R. ~:(~A~)~%~}" 1 "first" 2 "second" 3 "third")))
+
 (deftest table-with-header-test
   (equiv "~30<Name~;Count~;Price~>~%~{~30<~A~;~D~;~$~>~%~}"
          ["Widget" 100 9.99 "Gadget" 42 24.50]))
+
+(deftest sparse-name-list-test
+  (testing "Combines rest iteration, conditional output, case conversion, and separators"
+    (equiv "~@{~@[~:(~A~)~^, ~]~}" "alice" nil "bob" "carol")))
 
 (deftest items-example-test
   (testing "CLtL2: Items with ~#[ dispatching on remaining arg count"

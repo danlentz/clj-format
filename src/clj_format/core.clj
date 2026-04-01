@@ -5,7 +5,8 @@
   When it is a DSL form (vector or keyword), compiles it to a format string
   first, then invokes cl-format with the result."
   (:require [clojure.pprint :as pp]
-            [clj-format.compiler :as compiler]))
+            [clj-format.compiler :as compiler]
+            [clj-format.errors :as err]))
 
 (defn clj-format
   "Format args according to fmt, writing to writer.
@@ -30,6 +31,5 @@
                   (string? fmt)  fmt
                   (vector? fmt)  (compiler/compile-format fmt)
                   (keyword? fmt) (compiler/compile-format [fmt])
-                  :else (throw (ex-info "Format spec must be a string, vector, or keyword"
-                                        {:fmt fmt})))]
+                  :else (throw (err/invalid-format-spec fmt)))]
     (apply pp/cl-format writer fmt-str args)))

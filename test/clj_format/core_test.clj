@@ -41,7 +41,16 @@
     (is (= "hello" (.toString sw)) "Writer receives output")))
 
 (deftest invalid-format-spec-test
-  (is (thrown? clojure.lang.ExceptionInfo (clj-format nil 42 "bad"))))
+  (is (thrown? clojure.lang.ExceptionInfo (clj-format nil 42 "bad")))
+  (try
+    (clj-format nil 42 "bad")
+    (is false "expected ExceptionInfo")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= {:library :clj-format
+              :phase :api
+              :kind :invalid-format-spec
+              :fmt 42}
+             (ex-data e))))))
 
 (deftest dsl-string-equivalence-test
   (testing "DSL and string produce identical output"

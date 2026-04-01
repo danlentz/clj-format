@@ -133,7 +133,23 @@
   (is (= ["a" :nl "b"] (parse-format "a~@\n   b"))))
 
 (deftest parse-unknown-directive-test
-  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~Q"))))
+  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~Q")))
+  (try
+    (parse-format "~Q")
+    (is false "expected ExceptionInfo")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :clj-format (:library (ex-data e))))
+      (is (= :parse (:phase (ex-data e))))
+      (is (= :unknown-directive (:kind (ex-data e))))
+      (is (= \Q (:char (ex-data e)))))))
 
 (deftest parse-invalid-special-flags-test
-  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~:@*"))))
+  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~:@*")))
+  (try
+    (parse-format "~:@*")
+    (is false "expected ExceptionInfo")
+    (catch clojure.lang.ExceptionInfo e
+      (is (= :clj-format (:library (ex-data e))))
+      (is (= :parse (:phase (ex-data e))))
+      (is (= :invalid-special-flags (:kind (ex-data e))))
+      (is (= \* (:char (ex-data e)))))))

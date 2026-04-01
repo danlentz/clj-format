@@ -10,7 +10,8 @@
     (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
     (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
     (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
-  (:require [clj-format.directives :as d]))
+  (:require [clj-format.directives :as d]
+            [clj-format.errors :as err]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -299,8 +300,12 @@
           :else
           (if-let [config (get d/+char->simple+ uc)]
             [(build-simple-directive config params flags) pos]
-            (throw (ex-info (str "Unknown directive character: " c)
-                            {:char c :position (dec pos)}))))))))
+            (throw (err/parse-error
+                     (str "Unknown directive character: " c)
+                     {:kind :unknown-directive
+                      :char c
+                      :position (dec pos)
+                      :format-string s}))))))))
 
 (defn- parse-body
   "Parse a sequence of literal text and directives until end of string
@@ -343,6 +348,7 @@
    Examples:
      (parse-format \"~A\")             ;=> [:str]
      (parse-format \"Hello ~A!\")      ;=> [\"Hello \" :str \"!\"]
+     (parse-format \"~R file~:P\")     ;=> [:cardinal \" file\" [:plural {:rewind true}]]
      (parse-format \"~10:D\")          ;=> [[:int {:width 10 :group true}]]
      (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
      (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
