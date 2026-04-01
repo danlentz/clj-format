@@ -126,7 +126,9 @@ data type consume an argument; directives that name an action don't.**
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `:format` | `:name` / `:readable` | `:name` = "Space"; `:readable` = `\space` |
+| `:name` | boolean | Emit the character name (for example `"Space"`) |
+| `:readable` | boolean | Emit the readable form (for example `\space`) |
+| `:format` | `:name` / `:readable` | Backward-compatible shorthand for setting one modifier |
 
 ### Integers
 
