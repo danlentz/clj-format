@@ -43,10 +43,19 @@ The DSL follows the [Hiccup convention](https://github.com/weavejester/hiccup):
 `[:keyword optional-opts-map & body]`. Bare keywords are shorthand for
 directives with no options. Strings are literal text.
 
+There are two common vector shapes:
+- A single directive vector like `[:str]` or `[:int {:width 8}]`
+- A body vector like `["Name: " :str]` or `[:cardinal " file" [:plural {:rewind true}]]`
+
+If the second element is a map, it is the options map. Otherwise the
+remaining elements are treated as body content. That means both `:str`
+and `[:str]` are valid ways to express `~A`, depending on context.
+
 ### Basics
 
 ```clojure
 ;; Print values
+:str                            ;; => ~A  (bare keyword shorthand)
 [:str]                          ;; => ~A  (human readable)
 [:pr]                           ;; => ~S  (readable with quotes)
 
@@ -211,10 +220,15 @@ with options or compound directives).
 ```clojure
 (parse-format "~A")             ;=> [:str]
 (parse-format "Hello ~A!")      ;=> ["Hello " :str "!"]
+(parse-format "~R file~:P")     ;=> [:cardinal " file" [:plural {:rewind true}]]
 (parse-format "~{~A~^, ~}")    ;=> [[:each {:sep ", "} :str]]
 (parse-format "~:[no~;yes~]")  ;=> [[:if "yes" "no"]]
 (parse-format "~:(~A~)")       ;=> [[:str {:case :capitalize}]]
 ```
+
+When `parse-format` rejects an input it throws `ExceptionInfo` with
+structured `ex-data` describing the parse failure. Errors raised by
+`clojure.pprint/cl-format` itself still come from that library.
 
 ### `clj-format.compiler/compile-format`
 
@@ -227,15 +241,22 @@ Compile a DSL form into a cl-format format string. The inverse of
 bare keyword.
 
 ```clojure
+(compile-format :str)                       ;=> "~A"
 (compile-format [:str])                      ;=> "~A"
 (compile-format [:str {:width 10}])          ;=> "~10A"
 (compile-format ["Hello " :str "!"])         ;=> "Hello ~A!"
+(compile-format [:cardinal " file" [:plural {:rewind true}]])
+                                            ;=> "~R file~:P"
 (compile-format [:each {:sep ", "} :str])    ;=> "~{~A~^, ~}"
 (compile-format [:if "yes" "no"])            ;=> "~:[no~;yes~]"
 ```
 
 Round-trip fidelity: `(= s (compile-format (parse-format s)))` holds for
 any valid format string.
+
+When `compile-format` rejects an invalid DSL form it throws
+`ExceptionInfo` with structured `ex-data` describing the compile-phase
+error.
 
 ## Documentation
 

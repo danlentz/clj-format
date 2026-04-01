@@ -5,6 +5,17 @@ equivalents. Every example shows both forms, the arguments, and the output.
 Sources include Practical Common Lisp, CLtL2, ClojureDocs, and the CL
 HyperSpec.
 
+## Reading The DSL
+
+Examples use both bare keywords and directive vectors:
+- `:str` and `[:str]` both mean `~A`
+- `["Name: " :str]` is a body vector containing literal text and directives
+- `[:cardinal " file" [:plural {:rewind true}]]` is also a body vector:
+  without an opts map, the remaining elements are body content
+
+If the second element is a map, it is the directive's options map.
+Otherwise the rest of the vector is treated as body content.
+
 ## Printing Values
 
 ### Human-readable output
@@ -609,6 +620,18 @@ args remain. Add more args to reveal more of the message.*
 ;; => "<Foo 5> 7"
 ```
 
+### Runtime template with shared arguments
+
+*Source: Common Lisp `~@?` indirection. The format string itself is data.*
+
+```clojure
+(cl-format  nil "~@? after ~D tries"
+            "~A saved as ~A" "Report" "report.txt" 3)
+(clj-format nil [[:recur {:from :rest}] " after " :int " tries"]
+            "~A saved as ~A" "Report" "report.txt" 3)
+;; => "Report saved as report.txt after 3 tries"
+```
+
 ## Tabulation
 
 ### Column alignment
@@ -707,6 +730,17 @@ pluralization, and iteration in one format string.*
 ;; => "I. First\nII. Second\nIII. Third\n"
 ```
 
+### Roman numeral enumerated list from flat arguments
+
+```clojure
+(cl-format  nil "~@{~@R. ~:(~A~)~%~}"
+             1 "first" 2 "second" 3 "third")
+(clj-format nil [[:each {:from :rest}
+                  :roman ". " [:str {:case :capitalize}] :nl]]
+             1 "first" 2 "second" 3 "third")
+;; => "I. First\nII. Second\nIII. Third\n"
+```
+
 ### Justified table with header
 
 ```clojure
@@ -716,6 +750,17 @@ pluralization, and iteration in one format string.*
                  [:each [:justify {:width 30} :str :int :money] :nl]]
              ["Widget" 100 9.99 "Gadget" 42 24.50])
 ;; => "Name        Count        Price\nWidget         100        9.99\nGadget          42       24.50\n"
+```
+
+### Sparse capitalized name list
+
+```clojure
+(cl-format  nil "~@{~@[~:(~A~)~^, ~]~}"
+             "alice" nil "bob" "carol")
+(clj-format nil [[:each {:from :rest}
+                  [:when [:str {:case :capitalize}] :stop ", "]]]
+             "alice" nil "bob" "carol")
+;; => "Alice, Bob, Carol"
 ```
 
 ### CLtL2 Items example
