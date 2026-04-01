@@ -38,6 +38,14 @@ Lisp, CLtL2, and the CL HyperSpec.
 ;; DSL form — same result, readable syntax
 (fmt/clj-format nil [:int " item" [:plural {:rewind true}]] 5)
 ;; => "5 items"
+
+;; Parse a format string into the DSL
+(fmt/parse-format "~R file~:P")
+;; => [:cardinal " file" [:plural {:rewind true}]]
+
+;; Compile DSL back to a format string
+(fmt/compile-format [:cardinal " file" [:plural {:rewind true}]])
+;; => "~R file~:P"
 ```
 
 ## The DSL
@@ -189,6 +197,11 @@ Applied as a `:case` option — no extra nesting:
 
 ## API
 
+The public API is available from `clj-format.core`. The lower-level
+`clj-format.parser` and `clj-format.compiler` namespaces remain available,
+but `clj-format.core` re-exports `parse-format` and `compile-format` for
+convenience.
+
 ### `clj-format.core/clj-format`
 
 ```clojure
@@ -208,15 +221,15 @@ Drop-in replacement for `clojure.pprint/cl-format`.
 - **keyword** — shorthand for a single bare directive (e.g., `:str` for `~A`)
 
 ```clojure
-(clj-format nil "~D item~:P" 5)                            ;; => "5 items"
-(clj-format nil [:int " item" [:plural {:rewind true}]] 5) ;; => "5 items"
-(clj-format nil :cardinal 42)                               ;; => "forty-two"
+(fmt/clj-format nil "~D item~:P" 5)                            ;; => "5 items"
+(fmt/clj-format nil [:int " item" [:plural {:rewind true}]] 5) ;; => "5 items"
+(fmt/clj-format nil :cardinal 42)                               ;; => "forty-two"
 ```
 
-### `clj-format.parser/parse-format`
+### `clj-format.core/parse-format`
 
 ```clojure
-(parse-format s)
+(fmt/parse-format s)
 ```
 
 Parse a cl-format format string into the DSL. Returns a vector of elements:
@@ -224,22 +237,22 @@ literal strings, bare keywords (simple directives), and vectors (directives
 with options or compound directives).
 
 ```clojure
-(parse-format "~A")             ;=> [:str]
-(parse-format "Hello ~A!")      ;=> ["Hello " :str "!"]
-(parse-format "~R file~:P")     ;=> [:cardinal " file" [:plural {:rewind true}]]
-(parse-format "~{~A~^, ~}")    ;=> [[:each {:sep ", "} :str]]
-(parse-format "~:[no~;yes~]")  ;=> [[:if "yes" "no"]]
-(parse-format "~:(~A~)")       ;=> [[:str {:case :capitalize}]]
+(fmt/parse-format "~A")             ;=> [:str]
+(fmt/parse-format "Hello ~A!")      ;=> ["Hello " :str "!"]
+(fmt/parse-format "~R file~:P")     ;=> [:cardinal " file" [:plural {:rewind true}]]
+(fmt/parse-format "~{~A~^, ~}")    ;=> [[:each {:sep ", "} :str]]
+(fmt/parse-format "~:[no~;yes~]")  ;=> [[:if "yes" "no"]]
+(fmt/parse-format "~:(~A~)")       ;=> [[:str {:case :capitalize}]]
 ```
 
 When `parse-format` rejects an input it throws `ExceptionInfo` with
 structured `ex-data` describing the parse failure. Errors raised by
 `clojure.pprint/cl-format` itself still come from that library.
 
-### `clj-format.compiler/compile-format`
+### `clj-format.core/compile-format`
 
 ```clojure
-(compile-format dsl-body)
+(fmt/compile-format dsl-body)
 ```
 
 Compile a DSL form into a cl-format format string. The inverse of
@@ -247,14 +260,14 @@ Compile a DSL form into a cl-format format string. The inverse of
 bare keyword.
 
 ```clojure
-(compile-format :str)                       ;=> "~A"
-(compile-format [:str])                      ;=> "~A"
-(compile-format [:str {:width 10}])          ;=> "~10A"
-(compile-format ["Hello " :str "!"])         ;=> "Hello ~A!"
-(compile-format [:cardinal " file" [:plural {:rewind true}]])
-                                            ;=> "~R file~:P"
-(compile-format [:each {:sep ", "} :str])    ;=> "~{~A~^, ~}"
-(compile-format [:if "yes" "no"])            ;=> "~:[no~;yes~]"
+(fmt/compile-format :str)                       ;=> "~A"
+(fmt/compile-format [:str])                      ;=> "~A"
+(fmt/compile-format [:str {:width 10}])          ;=> "~10A"
+(fmt/compile-format ["Hello " :str "!"])         ;=> "Hello ~A!"
+(fmt/compile-format [:cardinal " file" [:plural {:rewind true}]])
+                                                ;=> "~R file~:P"
+(fmt/compile-format [:each {:sep ", "} :str])    ;=> "~{~A~^, ~}"
+(fmt/compile-format [:if "yes" "no"])            ;=> "~:[no~;yes~]"
 ```
 
 Round-trip fidelity: `(= s (compile-format (parse-format s)))` holds for

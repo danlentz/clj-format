@@ -6,7 +6,29 @@
   first, then invokes cl-format with the result."
   (:require [clojure.pprint :as pp]
             [clj-format.compiler :as compiler]
-            [clj-format.errors :as err]))
+            [clj-format.errors :as err]
+            [clj-format.parser :as parser]))
+
+(defn parse-format
+  "Parse a cl-format string into the clj-format DSL.
+
+  Examples:
+    (parse-format \"~A\")             ;; => [:str]
+    (parse-format \"Hello ~A!\")      ;; => [\"Hello \" :str \"!\"]
+    (parse-format \"~R file~:P\")     ;; => [:cardinal \" file\" [:plural {:rewind true}]]"
+  [s]
+  (parser/parse-format s))
+
+(defn compile-format
+  "Compile a clj-format DSL form into a cl-format string.
+
+  Examples:
+    (compile-format :str)                                 ;; => \"~A\"
+    (compile-format [:str {:width 10}])                   ;; => \"~10A\"
+    (compile-format [:cardinal \" file\" [:plural {:rewind true}]])
+                                                         ;; => \"~R file~:P\""
+  [dsl]
+  (compiler/compile-format dsl))
 
 (defn clj-format
   "Format args according to fmt, writing to writer.
@@ -29,7 +51,7 @@
   [writer fmt & args]
   (let [fmt-str (cond
                   (string? fmt)  fmt
-                  (vector? fmt)  (compiler/compile-format fmt)
-                  (keyword? fmt) (compiler/compile-format [fmt])
+                  (vector? fmt)  (compile-format fmt)
+                  (keyword? fmt) (compile-format [fmt])
                   :else (throw (err/invalid-format-spec fmt)))]
     (apply pp/cl-format writer fmt-str args)))

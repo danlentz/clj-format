@@ -3,7 +3,15 @@
    writer variants, and DSL/string equivalence."
   (:require [clojure.test :refer :all]
             [clojure.pprint :refer [cl-format]]
-            [clj-format.core :refer [clj-format]]))
+            [clj-format.core :refer [clj-format compile-format parse-format]]))
+
+
+(deftest exposed-helpers-test
+  (is (= [:str] (parse-format "~A")))
+  (is (= ["Hello " :str "!"] (parse-format "Hello ~A!")))
+  (is (= "~A" (compile-format :str)))
+  (is (= "~R file~:P"
+         (compile-format [:cardinal " file" [:plural {:rewind true}]]))))
 
 
 (deftest string-passthrough-test
