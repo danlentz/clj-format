@@ -1,5 +1,7 @@
 # clj-format
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.danlentz/clj-format.svg)](https://clojars.org/com.github.danlentz/clj-format)
+
 A Clojure DSL for `clojure.pprint/cl-format`.
 
 cl-format is extraordinarily powerful — it handles comma-grouped integers, Roman
