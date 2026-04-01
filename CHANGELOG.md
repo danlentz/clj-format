@@ -5,6 +5,16 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- Refactored special-dispatch directives (`~R`, `~*`, `~_`) to use shared
+  data-driven metadata in `clj-format.directives`, simplifying parser and
+  compiler logic while preserving behavior.
+
+### Fixed
+- Preserved `~C` flag combinations during parse/compile round-trips,
+  escaped `:each` separators containing `~`, and added regression tests
+  for special-dispatch edge cases.
+
 ## 0.1.0 - 2026-03-27
 
 ### Added

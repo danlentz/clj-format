@@ -51,6 +51,19 @@
   (str (when (and colon (flag-active? colon opts)) ":")
        (when (and at (flag-active? at opts)) "@")))
 
+(defn- compile-char-flags
+  "Serialize ~C modifiers while remaining compatible with the older
+   {:format :name|:readable} option shape."
+  [opts]
+  (str (when (or (:name opts) (= :name (:format opts))) ":")
+       (when (or (:readable opts) (= :readable (:format opts))) "@")))
+
+(defn- format-raw-flags
+  "Format a raw [colon? at?] flag tuple."
+  [[colon? at?]]
+  (str (when colon? ":")
+       (when at? "@")))
+
 (defn- escape-tildes [s]
   (str/replace s "~" "~~"))
 
@@ -109,25 +122,20 @@
   (let [{:keys [char params flags]} (d/+directives+ kw)]
     (maybe-wrap-case opts
       (fn [opts]
-        (str "~" (format-params params opts) (compile-flags flags opts) char)))))
+        (str "~"
+             (format-params params opts)
+             (if (= kw :char)
+               (compile-char-flags opts)
+               (compile-flags flags opts))
+             char)))))
 
 (defn- compile-special
   "Compile special-dispatch directives (:cardinal, :ordinal, etc.)."
   [kw opts]
   (maybe-wrap-case opts
     (fn [opts]
-      (case kw
-        :cardinal  "~R"
-        :ordinal   "~:R"
-        :roman     "~@R"
-        :old-roman "~:@R"
-        :back      (str "~" (some-> (:n opts) str) ":*")
-        :goto      (str "~" (some-> (:n opts) str) "@*")
-        :break     (case (:mode opts)
-                     :fill      "~:_"
-                     :miser     "~@_"
-                     :mandatory "~:@_"
-                     "~_")))))
+      (let [{:keys [char flags params]} (d/special->raw kw opts)]
+        (str "~" (format-params params opts) (format-raw-flags flags) char)))))
 
 (defn- compile-each
   "Compile [:each opts? & body] -> ~flags max{ body ~close}"
@@ -137,7 +145,7 @@
       (let [open-flags (case from
                          :rest "@", :sublists ":", :rest-sublists ":@", nil "")
             body-str   (compile-body body-elements)
-            body-str   (if sep (str body-str "~^" sep) body-str)]
+            body-str   (if sep (str body-str "~^" (escape-tildes sep)) body-str)]
         (str "~" (some-> max str) open-flags "{"
              body-str
              (if (= 1 min) "~:}" "~}"))))))

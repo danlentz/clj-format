@@ -125,6 +125,11 @@
   (testing "CLtL2: uppercase and lowercase Roman in one string"
     (equiv "~@R ~(~@R~)" 14 14)))
 
+(deftest character-formatting-test
+  (equiv "~:C" \newline)
+  (equiv "~@C" \newline)
+  (equiv "~:@C" \newline))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Floating Point
@@ -230,6 +235,9 @@
   (equiv "~{~A~^, ~}" [1 2 3])
   (equiv "~{~A~^, ~}" [1])
   (equiv "~{~A~^, ~}" []))
+
+(deftest tilde-separator-test
+  (equiv "~{~A~^~~~}" [1 2 3]))
 
 (deftest at-sign-iteration-test
   (equiv "~@{~A~^, ~}" 1 2 3))

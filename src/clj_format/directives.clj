@@ -39,7 +39,7 @@
    :str       (assoc padded-output :char \A)
    :pr        (assoc padded-output :char \S)
    :write     {:char \W :params [] :flags {:colon [:pretty true] :at [:full true]}}
-   :char      {:char \C :params [] :flags {:colon [:format :name] :at [:format :readable]}}
+   :char      {:char \C :params [] :flags {:colon [:name true] :at [:readable true]}}
    ;; Integer
    :int       (assoc integer-output :char \D)
    :bin       (assoc integer-output :char \B)
@@ -84,9 +84,24 @@
 ;; Derived Lookups
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def ^:private +special-families+
+  "Data-driven special dispatch rules shared by the parser and compiler."
+  {\R {:param-kw :radix
+       :variants {[false false] :cardinal
+                  [true false]  :ordinal
+                  [false true]  :roman
+                  [true true]   :old-roman}}
+   \* {:variants {[false false] :skip
+                  [true false]  :back
+                  [false true]  :goto}}
+   \_ {:variants {[false false] :break
+                  [true false]  [:break {:mode :fill}]
+                  [false true]  [:break {:mode :miser}]
+                  [true true]   [:break {:mode :mandatory}]}}})
+
 (def ^:const +special-chars+
   "Characters with flag-based keyword dispatch in the parser."
-  #{\R \* \_})
+  (set (keys +special-families+)))
 
 (def +char->simple+
   "Maps directive characters to config entries for simple (non-special)
@@ -103,9 +118,15 @@
     :downcase :upcase :capitalize :titlecase
     :justify :logical-block})
 
-(def ^:const +special-keywords+
-  "Keywords that compile via special dispatch (not table-driven)."
-  #{:cardinal :ordinal :roman :old-roman :back :goto :break})
+(def +special-keywords+
+  "Keywords that compile via special dispatch."
+  (into #{}
+        (comp (mapcat (comp vals :variants val))
+              (map (fn [variant]
+                     (if (vector? variant)
+                       (first variant)
+                       variant))))
+        +special-families+))
 
 (def ^:const +case-open+
   "Maps case conversion mode keywords to their cl-format opening strings."
@@ -135,6 +156,54 @@
                  (assoc m opt-key opt-val)
                  m))
              {} flag-map))
+
+(defn- flag-key
+  "Normalize raw colon/at flags to a lookup key."
+  [raw-flags]
+  [(boolean (:colon raw-flags)) (boolean (:at raw-flags))])
+
+(defn- variant->kw+opts
+  "Normalize a special-dispatch variant to [kw opts]."
+  [variant]
+  (if (vector? variant)
+    variant
+    [variant {}]))
+
+(declare raw->opts)
+
+(defn parse-special
+  "Translate a special-dispatch directive to DSL form."
+  [char positional-params raw-flags]
+  (let [{:keys [param-kw variants]} (get +special-families+ char)
+        variant (if (and param-kw (seq positional-params))
+                  param-kw
+                  (get variants (flag-key raw-flags) ::invalid))]
+    (when (= ::invalid variant)
+      (throw (ex-info (str "Invalid flag combination for directive: " char)
+                      {:char char :flags raw-flags})))
+    (let [[kw base-opts] (variant->kw+opts variant)
+          opts           (merge base-opts
+                                (raw->opts kw
+                                           positional-params
+                                           (if (= kw param-kw) raw-flags {})))]
+      (if (seq opts) [kw opts] kw))))
+
+(defn special->raw
+  "Translate a special-dispatch DSL form to raw compile metadata."
+  [kw opts]
+  (or
+    (some (fn [[char {:keys [variants]}]]
+            (some (fn [[flags variant]]
+                    (let [[variant-kw base-opts] (variant->kw+opts variant)
+                          param-names            (:params (+directives+ variant-kw))
+                          allowed-keys           (concat param-names (keys base-opts))]
+                      (when (and (= kw variant-kw)
+                                 (= base-opts (select-keys opts (keys base-opts)))
+                                 (empty? (apply dissoc opts allowed-keys)))
+                        {:char char :flags flags :params param-names})))
+                  variants))
+          +special-families+)
+    (throw (ex-info "Unknown special directive form" {:kw kw :opts opts}))))
 
 (defn raw->opts
   "Convert raw cl-format params and flags to a semantic opts map.

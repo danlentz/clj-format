@@ -39,6 +39,11 @@
   (is (= "~@A" (compile-format [[:str {:pad :left}]])))
   (is (= "~:P" (compile-format [[:plural {:rewind true}]])))
   (is (= "~@P" (compile-format [[:plural {:form :ies}]])))
+  (is (= "~:C" (compile-format [[:char {:name true}]])))
+  (is (= "~@C" (compile-format [[:char {:readable true}]])))
+  (is (= "~:@C" (compile-format [[:char {:name true :readable true}]])))
+  (is (= "~:C" (compile-format [[:char {:format :name}]])))
+  (is (= "~@C" (compile-format [[:char {:format :readable}]])))
   (is (= "~4@T" (compile-format [[:tab {:col 4 :relative true}]])))
   (is (= "~@?" (compile-format [[:recur {:from :rest}]])))
   (is (= "~:^" (compile-format [[:stop {:outer true}]]))))
@@ -118,6 +123,13 @@
              "Items:~#[ none~; ~S~; ~S and ~S~:;~@{~#[~; and~] ~S~^,~}~]."
              "Done.~^ ~D warning~:P.~^ ~D error~:P."]]
     (is (= s (round-trip s)) (str "round-trip: " s))))
+
+(deftest round-trip-char-flags-test
+  (doseq [s ["~:C" "~@C" "~:@C"]]
+    (is (= s (round-trip s)) (str "round-trip: " s))))
+
+(deftest compile-each-separator-escaping-test
+  (is (= "~{~A~^~~~}" (compile-format [[:each {:sep "~"} :str]]))))
 
 (deftest round-trip-tilde-test
   (is (= "a~~b" (round-trip "a~~b"))))

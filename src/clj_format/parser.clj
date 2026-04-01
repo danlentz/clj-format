@@ -146,35 +146,6 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Special Directive Dispatch
-;;
-;; R, *, and _ map to different DSL keywords based on flags/params.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn- translate-radix
-  "~R dispatches to :cardinal, :ordinal, :roman, :old-roman, or :radix."
-  [params raw-flags]
-  (if (seq params)
-    (let [opts (d/raw->opts :radix params raw-flags)]
-      (if (seq opts) [:radix opts] :radix))
-    (colon-at-dispatch raw-flags :old-roman :ordinal :roman :cardinal)))
-
-(defn- translate-goto
-  "~* dispatches to :skip, :back, or :goto based on flags."
-  [params raw-flags]
-  (let [kw   (colon-at-dispatch raw-flags :goto :back :goto :skip)
-        opts (d/raw->opts kw params {})]
-    (if (seq opts) [kw opts] kw)))
-
-(defn- translate-break
-  "~_ dispatches to [:break {:mode m}] or bare :break."
-  [raw-flags]
-  (if-let [mode (colon-at-dispatch raw-flags :mandatory :fill :miser nil)]
-    [:break {:mode mode}]
-    :break))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Recursive Descent Parser
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -225,7 +196,7 @@
                (assoc param-opts :default (inline-clause default))
                (conj clauses elements))
              end-pos])
-          (recur pos (conj clauses elements)))
+          (recur (long pos) (conj clauses elements)))
         [(make-clause-compound :choose param-opts (conj clauses elements))
          pos]))))
 
@@ -273,7 +244,7 @@
   (loop [pos pos, clauses []]
     (let [[elements pos term-char term-flags] (parse-body s pos #{\> \;})]
       (if (= term-char \;)
-        (recur pos (conj clauses elements))
+        (recur (long pos) (conj clauses elements))
         (let [all-clauses (conj clauses elements)
               logical?    (:colon term-flags)
               kw          (if logical? :logical-block :justify)
@@ -321,10 +292,11 @@
 
       :else
       (let [uc (Character/toUpperCase ^char c)]
-        (case uc
-          \R [(translate-radix params flags) pos]
-          \* [(translate-goto params flags) pos]
-          \_ [(translate-break flags) pos]
+        (cond
+          (d/+special-chars+ uc)
+          [(d/parse-special uc params flags) pos]
+
+          :else
           (if-let [config (get d/+char->simple+ uc)]
             [(build-simple-directive config params flags) pos]
             (throw (ex-info (str "Unknown directive character: " c)
@@ -348,13 +320,13 @@
             (if (contains? terminators peek-char)
               [elements (inc peek-pos) peek-char peek-flags]
               (let [[form end-pos] (parse-directive s (inc pos))]
-                (recur end-pos (cond-> elements form (conj form))))))
+                (recur (long end-pos) (cond-> elements form (conj form))))))
           ;; Literal text — accumulate until next tilde or end
           (let [end (loop [i pos]
                       (if (and (< i (.length s)) (not= (.charAt s i) \~))
                         (recur (inc i))
                         i))]
-            (recur end (conj elements (.substring s (int pos) (int end))))))))))
+            (recur (long end) (conj elements (.substring s (int pos) (int end))))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

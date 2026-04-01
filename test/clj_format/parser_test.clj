@@ -32,7 +32,10 @@
   (is (= [[:str {:pad :left}]] (parse-format "~@A")))
   (is (= [[:write {:pretty true}]] (parse-format "~:W")))
   (is (= [[:tab {:col 4 :relative true}]] (parse-format "~4@T")))
-  (is (= [[:plural {:rewind true :form :ies}]] (parse-format "~:@P"))))
+  (is (= [[:plural {:rewind true :form :ies}]] (parse-format "~:@P")))
+  (is (= [[:char {:name true}]] (parse-format "~:C")))
+  (is (= [[:char {:readable true}]] (parse-format "~@C")))
+  (is (= [[:char {:name true :readable true}]] (parse-format "~:@C"))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -131,3 +134,6 @@
 
 (deftest parse-unknown-directive-test
   (is (thrown? clojure.lang.ExceptionInfo (parse-format "~Q"))))
+
+(deftest parse-invalid-special-flags-test
+  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~:@*"))))
