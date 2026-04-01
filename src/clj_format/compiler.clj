@@ -249,8 +249,8 @@
   (str "~" (when (:colon opts) ":")
        "<" (join-clauses clauses) "~:>"))
 
-(defn- parse-hiccup
-  "Destructure a directive vector using the Hiccup convention.
+(defn- interpret-directive-form
+  "Interpret a directive vector into keyword, opts, and children.
    If the second element is a map, it's options; everything after is children.
    Returns [keyword opts children]."
   [v]
@@ -277,7 +277,7 @@
         (str "~" (:char (d/directive-config elem)))))
 
     (vector? elem)
-    (let [[kw opts children] (parse-hiccup elem)]
+    (let [[kw opts children] (interpret-directive-form elem)]
       (case kw
         :each          (compile-each opts children)
         :if            (do
