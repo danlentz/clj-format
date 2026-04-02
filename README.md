@@ -206,16 +206,20 @@ Applied as a `:case` option — no extra nesting:
 ### Tabular numeric report with tabs
 ```clojure
 (clj-format nil
-  [[:each {:from :sublists}
-    :nl :str [:tab {:col 10}]
+  [[:justify {:width 44} "Name" "Value" "Bar" "Count"] :nl
+   [:each {:from :sublists}
+    :str [:tab {:col 12}]
     [:float {:width 6 :decimals 2}] " "
-    [:tilde {:count :V}] [:tab {:col 30}] :back :int]]
+    [:tilde {:count :V}] [:tab {:col 36}]
+    :back :int :nl]]
   [["Alpha" 3.14 5]
-   ["Beta" 12.0 2]])
+   ["Beta" 12.0 2]
+   ["Gamma" 98.5 9]])
 ;; =>
-;;
-;; Alpha       3.14 ~~~~~        5
-;; Beta       12.00 ~~           2
+;; Name         Value         Bar         Count
+;; Alpha         3.14 ~~~~~            5
+;; Beta         12.00 ~~               2
+;; Gamma        98.50 ~~~~~~~~~        9
 ```
 
 ### Wrapped notation with `:logical-block`
