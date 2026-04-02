@@ -2,7 +2,8 @@
   "Tests every example from doc/examples.md. For each format string, verifies
   that the DSL round-trip (parse → compile → cl-format) produces the same
   output as the original format string."
-  (:require [clj-format.test-support :as support]
+  (:require [clj-format.core :as fmt]
+            [clj-format.test-support :as support]
             [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]))
 
 (defn- equiv
@@ -349,6 +350,21 @@
 
 (deftest column-alignment-test
   (equiv "~A~20T~A" "Name" "Extension"))
+
+(deftest tabular-data-report-test
+  (testing "HyperSpec-style tabular report with tab stops, numeric formatting, and argument reuse"
+    (equiv "~:{~%~a~10t~6,2f ~v~~30t~:*~d~}"
+           [["Alpha" 3.14 5]
+            ["Beta" 12.0 2]])))
+
+(deftest word-wrapping-string-test
+  (testing "Word wrapping remains available via direct string passthrough"
+    (is (= "\n\nThe power of FORMAT \nis that it can wrap \nwords beautifully. "
+           (fmt/clj-format nil
+                           "~%~%~{~<~%~0,20:;~a ~>~}"
+                           ["The" "power" "of" "FORMAT" "is"
+                            "that" "it" "can" "wrap" "words"
+                            "beautifully."])))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

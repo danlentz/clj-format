@@ -197,7 +197,25 @@ Applied as a `:case` option — no extra nesting:
     [:justify {:width 36} :str :str :str] :nl]]
   ["Parser port" "Dan" "done"
    "CLJS parity" "Dan" "green"])
-;; => "Task           Owner           State\nParser port         Dan         done\nCLJS parity         Dan        green\n"
+;; =>
+;; Task           Owner           State
+;; Parser port         Dan         done
+;; CLJS parity         Dan        green
+```
+
+### Tabular numeric report with tabs
+```clojure
+(clj-format nil
+  [[:each {:from :sublists}
+    :nl :str [:tab {:col 10}]
+    [:float {:width 6 :decimals 2}] " "
+    [:tilde {:count :V}] [:tab {:col 30}] :back :int]]
+  [["Alpha" 3.14 5]
+   ["Beta" 12.0 2]])
+;; =>
+;;
+;; Alpha       3.14 ~~~~~        5
+;; Beta       12.00 ~~           2
 ```
 
 ### Wrapped notation with `:logical-block`
@@ -206,6 +224,20 @@ Applied as a `:case` option — no extra nesting:
   [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
   [255 140 0])
 ;; => "rgb(255, 140, 0)"
+```
+
+### Word-wrapped prose
+```clojure
+(clj-format nil
+  "~%~%~{~<~%~0,20:;~a ~>~}"
+  ["The" "power" "of" "FORMAT" "is"
+   "that" "it" "can" "wrap" "words"
+   "beautifully."])
+;; =>
+;;
+;; The power of FORMAT
+;; is that it can wrap
+;; words beautifully.
 ```
 
 ### XML tag formatter
