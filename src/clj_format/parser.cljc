@@ -19,29 +19,11 @@
 ;; String Scanning Utilities
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- string-length
-  "Returns the number of characters in s."
-  [s]
-  #?(:clj (.length ^String s)
-     :cljs (.-length s)))
-
 (defn- char-at
   "Returns the character at pos in s, or nil if out of bounds."
   [s pos]
-  (when (< pos (string-length s))
-    #?(:clj (.charAt ^String s pos)
-       :cljs (.charAt s pos))))
-
-(defn- substring
-  "Returns substring of s from start to end."
-  [s start end]
-  #?(:clj (.substring ^String s (int start) (int end))
-     :cljs (.substring s start end)))
-
-(defn- digit?
-  "True when c is an ASCII digit."
-  [c]
-  (boolean (re-matches #"\d" (str c))))
+  (when (< pos (count s))
+    (nth s pos)))
 
 (defn- parse-number
   "Parse a decimal integer string."
@@ -49,26 +31,20 @@
   #?(:clj (Long/parseLong s)
      :cljs (js/parseInt s 10)))
 
-(defn- upper-char
-  "Convert an ASCII directive character to uppercase."
-  [c]
-  #?(:clj (Character/toUpperCase ^char c)
-     :cljs (first (str/upper-case (str c)))))
-
 (defn- parse-int
   "Parse a signed integer at pos. Returns [value end-pos] or nil."
   [s pos]
-  (when (< pos (string-length s))
+  (when (< pos (count s))
     (let [c           (char-at s pos)
           signed?     (or (= c \+) (= c \-))
           digit-start (long (if signed? (inc pos) pos))
           digit-end   (loop [i digit-start]
-                        (if (and (< i (string-length s))
-                                 (digit? (char-at s i)))
+                        (if (and (< i (count s))
+                                 (re-matches #"\d" (str (char-at s i))))
                           (recur (inc i))
                           i))]
       (when (> digit-end digit-start)
-        [(parse-number (substring s pos digit-end)) digit-end]))))
+        [(parse-number (subs s pos digit-end)) digit-end]))))
 
 (defn- skip-whitespace
   "Advance pos past any spaces and tabs."
@@ -323,7 +299,7 @@
         (if (:at flags) [:nl pos] [nil pos]))
 
       :else
-      (let [uc (upper-char c)]
+      (let [uc (first (str/upper-case (str c)))]
         (cond
           (d/+special-chars+ uc)
           [(d/parse-special uc params flags) pos]
@@ -344,7 +320,7 @@
    Returns [elements end-pos term-char term-flags]."
   [s pos terminators]
   (loop [pos (long pos), elements []]
-    (if (>= pos (string-length s))
+    (if (>= pos (count s))
       [elements pos nil nil]
       (let [c (char-at s pos)]
         (if (= c \~)
@@ -359,10 +335,10 @@
                 (recur (long end-pos) (cond-> elements form (conj form))))))
           ;; Literal text — accumulate until next tilde or end
           (let [end (loop [i pos]
-                      (if (and (< i (string-length s)) (not= (char-at s i) \~))
+                      (if (and (< i (count s)) (not= (char-at s i) \~))
                         (recur (inc i))
                         i))]
-            (recur (long end) (conj elements (substring s pos end)))))))))
+            (recur (long end) (conj elements (subs s pos end)))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
