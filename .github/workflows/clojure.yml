@@ -12,13 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Prepare java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
         java-version: '17'
+
+    - name: Prepare Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
 
     - name: Install clojure tools
       uses: DeLaGuardo/setup-clojure@13.4
@@ -28,6 +33,13 @@ jobs:
         # to always provision the latest version
         #        cli: 1.10.1.693              # Clojure CLI based on tools.deps
         lein: 2.11.2                  # Leiningen
+        bb: latest                    # Babashka
 
-    - name: Run tests
+    - name: Run JVM tests
       run: lein test
+
+    - name: Run CLJS tests
+      run: ./bin/test-cljs
+
+    - name: Run Babashka smoke tests
+      run: bb test/clj_format/bb_runner.clj

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+lein with-profile +cljs run -m cljs.main \
+  -t node \
+  -d target/cljs-test \
+  -o target/cljs-test/tests.js \
+  -c clj-format.cljs-runner
+
+node target/cljs-test/tests.js

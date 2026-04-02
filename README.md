@@ -2,7 +2,7 @@
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.danlentz/clj-format.svg)](https://clojars.org/com.github.danlentz/clj-format)
 
-A Clojure and ClojureScript DSL for `cl-format`.
+A Clojure, ClojureScript, and Babashka-friendly DSL for `cl-format`.
 
 cl-format is extraordinarily powerful — it handles comma-grouped integers, Roman
 numerals, English number words, conditional pluralization, justified text,
@@ -52,6 +52,9 @@ Lisp, CLtL2, and the CL HyperSpec.
 
 On ClojureScript, the same public API is available from `clj-format.core`
 and delegates to `cljs.pprint/cl-format`.
+
+On Babashka, the same parser/compiler/core API works, and the full
+JVM-hosted suite is exercised under Babashka in CI.
 
 ## The DSL
 
@@ -315,9 +318,8 @@ lein test clj-format.core-test        # API mechanics
 lein test clj-format.parser-test       # parser tests
 lein test clj-format.compiler-test     # compiler + round-trip tests
 lein test clj-format.examples-test     # cl-format output equivalence
-lein with-profile +cljs run -m cljs.main -re node -m clj-format.cljs-runner
-                                       # run the shared CLJS test suite via Lein
-clj -M:test-cljs                       # run the shared CLJS test suite via deps.edn
+./bin/test-cljs                        # compile once, run shared CLJS suite via Node
+bb test/clj_format/bb_runner.clj       # full Babashka suite
 lein repl                              # start a REPL
 ```
 

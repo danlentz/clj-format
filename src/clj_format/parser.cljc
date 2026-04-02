@@ -157,6 +157,13 @@
       (into [kw opts] inlined)
       (into [kw] inlined))))
 
+(defn- assoc-some
+  "Associate k with v only when v is non-nil."
+  [m k v]
+  (if (some? v)
+    (assoc m k v)
+    m))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Recursive Descent Parser
@@ -206,7 +213,7 @@
         (if (:colon term-flags)
           (let [[default end-pos _ _] (parse-body s pos #{\]})]
             [(make-clause-compound :choose
-               (assoc param-opts :default (inline-clause default))
+               (assoc-some param-opts :default (inline-clause default))
                (conj clauses elements))
              end-pos])
           (recur pos (conj clauses elements)))

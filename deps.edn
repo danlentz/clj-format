@@ -1,7 +1,13 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.2"}}
  :aliases
- {:test {:extra-paths ["test"]}
+ {:test {:extra-paths ["test"]
+         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}
   :test-cljs {:extra-paths ["test"]
-              :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}}
-              :main-opts ["-m" "cljs.main" "-re" "node" "-m" "clj-format.cljs-runner"]}}}
+              :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
+                           org.clojure/test.check {:mvn/version "1.1.1"}}
+              :main-opts ["-m" "cljs.main"
+                          "-t" "node"
+                          "-d" "target/cljs-test"
+                          "-o" "target/cljs-test/tests.js"
+                          "-m" "clj-format.cljs-runner"]}}}

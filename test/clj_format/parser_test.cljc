@@ -77,6 +77,7 @@
 (deftest parse-conditionals-test
   (is (= [[:choose "zero" "one" "two"]] (parse-format "~[zero~;one~;two~]")))
   (is (= [[:choose {:default "other"} "zero" "one"]] (parse-format "~[zero~;one~:;other~]")))
+  (is (= [[:choose nil nil]] (parse-format "~[~;~:;~]")))
   (is (= [[:choose {:selector 1} "a" "b"]] (parse-format "~1[a~;b~]")))
   (is (= [[:choose nil nil nil]] (parse-format "~[~;~;~]")))
   (is (= [[:if "yes" "no"]] (parse-format "~:[no~;yes~]")))
