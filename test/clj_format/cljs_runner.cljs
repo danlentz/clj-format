@@ -3,12 +3,12 @@
             [clj-format.compiler-test]
             [clj-format.core-test]
             [clj-format.examples-test]
+            [clj-format.host-parity-test]
             [clj-format.parser-test]))
 
 (defn -main []
   (test/run-tests 'clj-format.compiler-test
                   'clj-format.core-test
                   'clj-format.examples-test
+                  'clj-format.host-parity-test
                   'clj-format.parser-test))
-
-(set! *main-cli-fn* -main)

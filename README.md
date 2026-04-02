@@ -315,6 +315,9 @@ lein test clj-format.core-test        # API mechanics
 lein test clj-format.parser-test       # parser tests
 lein test clj-format.compiler-test     # compiler + round-trip tests
 lein test clj-format.examples-test     # cl-format output equivalence
+lein with-profile +cljs run -m cljs.main -re node -m clj-format.cljs-runner
+                                       # run the shared CLJS test suite via Lein
+clj -M:test-cljs                       # run the shared CLJS test suite via deps.edn
 lein repl                              # start a REPL
 ```
 
