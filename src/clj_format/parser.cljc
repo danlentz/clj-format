@@ -7,10 +7,11 @@
   Examples:
     (parse-format \"~A\")             ;=> [:str]
     (parse-format \"Hello ~A!\")      ;=> [\"Hello \" :str \"!\"]
-    (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
-    (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
-    (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
-  (:require [clj-format.directives :as d]
+     (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
+     (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
+     (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
+  (:require [clojure.string :as str]
+            [clj-format.directives :as d]
             [clj-format.errors :as err]))
 
 
@@ -18,30 +19,60 @@
 ;; String Scanning Utilities
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn- string-length
+  "Returns the number of characters in s."
+  [s]
+  #?(:clj (.length ^String s)
+     :cljs (.-length s)))
+
 (defn- char-at
   "Returns the character at pos in s, or nil if out of bounds."
-  [^String s ^long pos]
-  (when (< pos (.length s))
-    (.charAt s pos)))
+  [s pos]
+  (when (< pos (string-length s))
+    #?(:clj (.charAt ^String s pos)
+       :cljs (.charAt s pos))))
+
+(defn- substring
+  "Returns substring of s from start to end."
+  [s start end]
+  #?(:clj (.substring ^String s (int start) (int end))
+     :cljs (.substring s start end)))
+
+(defn- digit?
+  "True when c is an ASCII digit."
+  [c]
+  (boolean (re-matches #"\d" (str c))))
+
+(defn- parse-number
+  "Parse a decimal integer string."
+  [s]
+  #?(:clj (Long/parseLong s)
+     :cljs (js/parseInt s 10)))
+
+(defn- upper-char
+  "Convert an ASCII directive character to uppercase."
+  [c]
+  #?(:clj (Character/toUpperCase ^char c)
+     :cljs (first (str/upper-case (str c)))))
 
 (defn- parse-int
   "Parse a signed integer at pos. Returns [value end-pos] or nil."
-  [^String s ^long pos]
-  (when (< pos (.length s))
-    (let [c           (.charAt s pos)
+  [s pos]
+  (when (< pos (string-length s))
+    (let [c           (char-at s pos)
           signed?     (or (= c \+) (= c \-))
           digit-start (long (if signed? (inc pos) pos))
           digit-end   (loop [i digit-start]
-                        (if (and (< i (.length s))
-                                 (Character/isDigit (.charAt s i)))
+                        (if (and (< i (string-length s))
+                                 (digit? (char-at s i)))
                           (recur (inc i))
                           i))]
       (when (> digit-end digit-start)
-        [(Long/parseLong (.substring s (int pos) (int digit-end))) digit-end]))))
+        [(parse-number (substring s pos digit-end)) digit-end]))))
 
 (defn- skip-whitespace
   "Advance pos past any spaces and tabs."
-  ^long [^String s ^long pos]
+  [s pos]
   (loop [p pos]
     (case (char-at s p)
       (\space \tab) (recur (inc p))
@@ -56,10 +87,10 @@
   "Parse a single directive parameter at pos.
    Handles integer literals, character literals ('x), V, and #.
    Returns [value end-pos] or nil if no param found."
-  [^String s ^long pos]
+  [s pos]
   (when-let [c (char-at s pos)]
     (case c
-      \'              [(.charAt s (inc pos)) (+ pos 2)]
+      \'              [(char-at s (inc pos)) (+ pos 2)]
       (\V \v)         [:V (inc pos)]
       \#              [:# (inc pos)]
       (parse-int s pos))))
@@ -68,7 +99,7 @@
   "Parse comma-separated directive parameters after a tilde.
    Parameters may be integers, 'char literals, V (arg value), # (arg count),
    or omitted (nil). Returns [param-vec end-pos]."
-  [^String s ^long pos]
+  [s pos]
   (let [[first-val first-end] (or (parse-one-param s pos)
                                   (when (= (char-at s pos) \,)
                                     [nil pos]))]
@@ -84,7 +115,7 @@
 (defn- parse-flags
   "Parse colon and at-sign modifier flags.
    Returns [flag-map end-pos] where flag-map has only truthy keys."
-  [^String s ^long pos]
+  [s pos]
   (loop [pos (long pos), colon false, at false]
     (case (char-at s pos)
       \: (recur (inc pos) true at)
@@ -187,7 +218,7 @@
 
 (defn- parse-choose
   "Parse ~[...~;...~] as numeric dispatch."
-  [^String s ^long pos param-opts]
+  [s pos param-opts]
   (loop [pos pos, clauses []]
     (let [[elements pos term-char term-flags] (parse-body s pos #{\] \;})]
       (if (= term-char \;)
@@ -203,20 +234,20 @@
 
 (defn- parse-if
   "Parse ~:[false~;true~] — reverses clause order to true-first."
-  [^String s ^long pos]
+  [s pos]
   (let [[false-body pos _ _] (parse-body s pos #{\] \;})
         [true-body  pos _ _] (parse-body s pos #{\]})]
     [(into [:if] (mapv inline-clause [true-body false-body])) pos]))
 
 (defn- parse-when
   "Parse ~@[body~] as truthiness guard."
-  [^String s ^long pos]
+  [s pos]
   (let [[body pos _ _] (parse-body s pos #{\]})]
     [(make-body-compound :when {} body) pos]))
 
 (defn- parse-each
   "Parse ~{...~} as iteration."
-  [^String s ^long pos open-flags open-params]
+  [s pos open-flags open-params]
   (let [[elements pos _ term-flags] (parse-body s pos #{\}})
         [elements sep] (detect-sep elements)
         opts (cond-> {}
@@ -232,7 +263,7 @@
 (defn- parse-case-conversion
   "Parse ~(...~). Flattens to a :case option when the body is a single
    element; falls back to compound form for multi-element bodies."
-  [^String s ^long pos open-flags]
+  [s pos open-flags]
   (let [[elements pos _ _] (parse-body s pos #{\)})
         mode (colon-at-dispatch open-flags :upcase :capitalize :titlecase :downcase)
         merged (when (= 1 (count elements))
@@ -241,7 +272,7 @@
 
 (defn- parse-justification
   "Parse ~<...~;...~> as justification or logical block."
-  [^String s ^long pos open-params open-flags]
+  [s pos open-params open-flags]
   (loop [pos pos, clauses []]
     (let [[elements pos term-char term-flags] (parse-body s pos #{\> \;})]
       (if (= term-char \;)
@@ -261,7 +292,7 @@
 
 (defn- parse-compound
   "Parse a compound directive. Returns [dsl-form end-pos]."
-  [^String s pos open-char params flags]
+  [s pos open-char params flags]
   (let [pos (long pos)]
     (case open-char
       \[ (cond
@@ -276,7 +307,7 @@
   "Parse a single directive starting after the tilde.
    Returns [dsl-form end-pos]. dsl-form is nil for format-string
    newlines that produce no output (plain ~\\n and ~:\\n)."
-  [^String s ^long pos]
+  [s pos]
   (let [[params pos] (parse-params s pos)
         [flags pos]  (parse-flags s pos)
         c            (char-at s pos)
@@ -292,7 +323,7 @@
         (if (:at flags) [:nl pos] [nil pos]))
 
       :else
-      (let [uc (Character/toUpperCase ^char c)]
+      (let [uc (upper-char c)]
         (cond
           (d/+special-chars+ uc)
           [(d/parse-special uc params flags) pos]
@@ -311,11 +342,11 @@
   "Parse a sequence of literal text and directives until end of string
    or a terminating directive character from the terminators set.
    Returns [elements end-pos term-char term-flags]."
-  [^String s ^long pos terminators]
+  [s pos terminators]
   (loop [pos (long pos), elements []]
-    (if (>= pos (.length s))
+    (if (>= pos (string-length s))
       [elements pos nil nil]
-      (let [c (.charAt s pos)]
+      (let [c (char-at s pos)]
         (if (= c \~)
           ;; Peek ahead to check for terminator before full parse
           (let [peek-pos              (inc pos)
@@ -328,10 +359,10 @@
                 (recur (long end-pos) (cond-> elements form (conj form))))))
           ;; Literal text — accumulate until next tilde or end
           (let [end (loop [i pos]
-                      (if (and (< i (.length s)) (not= (.charAt s i) \~))
+                      (if (and (< i (string-length s)) (not= (char-at s i) \~))
                         (recur (inc i))
                         i))]
-            (recur (long end) (conj elements (.substring s (int pos) (int end))))))))))
+            (recur (long end) (conj elements (substring s pos end)))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -353,5 +384,5 @@
      (parse-format \"~{~A~^, ~}\")    ;=> [[:each {:sep \", \"} :str]]
      (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
      (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
-  [^String s]
+  [s]
   (first (parse-body s 0 #{})))

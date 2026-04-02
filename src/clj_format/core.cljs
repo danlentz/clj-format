@@ -1,20 +1,21 @@
 (ns clj-format.core
-  "Drop-in replacement for clojure.pprint/cl-format.
+  "Drop-in replacement for cljs.pprint/cl-format.
 
   When the format argument is a string, delegates directly to cl-format.
   When it is a DSL form (vector or keyword), compiles it to a format string
   first, then invokes cl-format with the result."
-  (:require [clojure.pprint :as pp]
+  (:require [cljs.core :as core]
+            [cljs.pprint :as pp]
             [clj-format.compiler :as compiler]
             [clj-format.errors :as err]
             [clj-format.parser :as parser]))
 
 (defn- valid-output-target?
-  "True when target is a supported CLJ cl-format destination."
+  "True when target is a supported CLJS cl-format destination."
   [target]
   (or (nil? target)
       (true? target)
-      (instance? java.io.Writer target)))
+      (satisfies? core/IWriter target)))
 
 (defn- normalize-output-target
   "Normalize public output-target shorthands for cl-format."
@@ -52,8 +53,8 @@
 
   writer can be:
     - nil/false   — returns the formatted string
-    - true        — prints to *out*, returns nil
-    - a Writer    — writes to that writer, returns nil
+    - true        — prints via *print-fn*, returns nil
+    - an IWriter  — writes to that writer, returns nil
 
   Examples:
     (clj-format nil \"~D item~:P\" 5)                            ;; => \"5 items\"
@@ -68,5 +69,5 @@
                   (keyword? fmt) (compile-format [fmt])
                   :else          (throw (err/invalid-format-spec fmt)))]
     (when-not (valid-output-target? target)
-      (throw (err/invalid-output-target writer :clj)))
+      (throw (err/invalid-output-target writer :cljs)))
     (apply pp/cl-format target fmt-str args)))

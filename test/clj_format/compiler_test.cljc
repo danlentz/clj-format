@@ -1,7 +1,7 @@
 (ns clj-format.compiler-test
   "Tests the compiler: serialization of every directive type, and
    round-trip tests verifying parse -> compile -> compare."
-  (:require [clojure.test :refer :all]
+  (:require [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]
             [clj-format.parser :refer [parse-format]]
             [clj-format.compiler :refer [compile-format]]))
 
@@ -142,7 +142,7 @@
     (try
       (compile-format dsl)
       (is false (str "expected ExceptionInfo for " (pr-str dsl)))
-      (catch clojure.lang.ExceptionInfo e
+      (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) e
         (is (= :clj-format (:library (ex-data e))) (pr-str dsl))
         (is (= :compile (:phase (ex-data e))) (pr-str dsl))
         (is (= kind (:kind (ex-data e))) (pr-str dsl))))))

@@ -5,10 +5,18 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- ClojureScript compatibility via shared `.cljc` parser/compiler/directive
+  namespaces plus a `clj-format.core` wrapper for `cljs.pprint/cl-format`.
+- CLJS test coverage and runnable CLJS test entry points for both `lein`
+  and `deps.edn` workflows.
+
 ### Changed
 - Refactored special-dispatch directives (`~R`, `~*`, `~_`) to use shared
   data-driven metadata in `clj-format.directives`, simplifying parser and
   compiler logic while preserving behavior.
+- The public `clj-format` API now validates output targets and reports
+  invalid ones with structured `ExceptionInfo`.
 
 ### Fixed
 - Preserved `~C` flag combinations during parse/compile round-trips,

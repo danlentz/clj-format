@@ -2,7 +2,7 @@
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.danlentz/clj-format.svg)](https://clojars.org/com.github.danlentz/clj-format)
 
-A Clojure DSL for `clojure.pprint/cl-format`.
+A Clojure and ClojureScript DSL for `cl-format`.
 
 cl-format is extraordinarily powerful — it handles comma-grouped integers, Roman
 numerals, English number words, conditional pluralization, justified text,
@@ -22,8 +22,8 @@ clj-format lets you write the same thing as a Clojure data structure:
   data)
 ```
 
-When given a string, clj-format passes it directly to cl-format — full
-backward compatibility, zero migration cost.
+When given a string, clj-format passes it directly to host `cl-format` —
+full backward compatibility, zero migration cost.
 
 See [50+ side-by-side examples](doc/examples.md) from Practical Common
 Lisp, CLtL2, and the CL HyperSpec.
@@ -49,6 +49,9 @@ Lisp, CLtL2, and the CL HyperSpec.
 (fmt/compile-format [:cardinal " file" [:plural {:rewind true}]])
 ;; => "~R file~:P"
 ```
+
+On ClojureScript, the same public API is available from `clj-format.core`
+and delegates to `cljs.pprint/cl-format`.
 
 ## The DSL
 
@@ -183,6 +186,25 @@ Applied as a `:case` option — no extra nesting:
   n results)
 ```
 
+### Tabular status board with `:justify`
+```clojure
+(clj-format nil
+  [[:justify {:width 36} "Task" "Owner" "State"] :nl
+   [:each
+    [:justify {:width 36} :str :str :str] :nl]]
+  ["Parser port" "Dan" "done"
+   "CLJS parity" "Dan" "green"])
+;; => "Task           Owner           State\nParser port         Dan         done\nCLJS parity         Dan        green\n"
+```
+
+### Wrapped notation with `:logical-block`
+```clojure
+(clj-format nil
+  [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
+  [255 140 0])
+;; => "rgb(255, 140, 0)"
+```
+
 ### XML tag formatter
 ```clojure
 (clj-format nil
@@ -210,12 +232,18 @@ convenience.
 (clj-format writer fmt & args)
 ```
 
-Drop-in replacement for `clojure.pprint/cl-format`.
+Drop-in replacement for host `cl-format`:
+- `clojure.pprint/cl-format` on the JVM
+- `cljs.pprint/cl-format` in ClojureScript
 
 **`writer`** — output destination:
 - `nil` or `false` — return formatted string
-- `true` — print to `*out*`, return nil
-- a `java.io.Writer` — write to it, return nil
+- `true` — print to the host default output, return nil
+- a writer object — write to it, return nil
+
+Writer details are host-specific:
+- Clojure uses `java.io.Writer`
+- ClojureScript uses `cljs.core/IWriter`
 
 **`fmt`** — format specification:
 - **string** — passed directly to `cl-format` (full backward compatibility)

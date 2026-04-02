@@ -10,6 +10,16 @@
             :kind :invalid-format-spec
             :fmt fmt}))
 
+(defn invalid-output-target
+  "Build an exception for an unsupported public output target."
+  [target platform]
+  (ex-info "Output target must be nil, false, true, or a supported writer"
+           {:library :clj-format
+            :phase :api
+            :kind :invalid-output-target
+            :target target
+            :platform platform}))
+
 (defn parse-error
   "Build an exception for invalid format-string input."
   [message data]
@@ -24,4 +34,12 @@
   (ex-info message
            (merge {:library :clj-format
                    :phase :compile}
+                  data)))
+
+(defn runtime-error
+  "Build an exception for runtime behavior the library cannot support."
+  [message data]
+  (ex-info message
+           (merge {:library :clj-format
+                   :phase :runtime}
                   data)))

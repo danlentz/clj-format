@@ -621,6 +621,53 @@ args remain. Add more args to reveal more of the message.*
 ;; => "  foo bar "
 ```
 
+### Three-column status row
+
+*A practical use for `:justify`: report rows with evenly distributed padding.*
+
+```clojure
+(cl-format  nil "~36<Task~;Owner~;State~>" "Parser port" "Dan" "done")
+(clj-format nil [:justify {:width 36} "Parser port" "Dan" "done"])
+;; => "Parser port         Dan         done"
+```
+
+### Table with header
+
+```clojure
+(cl-format  nil "~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}"
+             ["Parser port" "Dan" "done"
+              "CLJS parity" "Dan" "green"])
+(clj-format nil [[:justify {:width 36} "Task" "Owner" "State"] :nl
+                 [:each [:justify {:width 36} :str :str :str] :nl]]
+             ["Parser port" "Dan" "done"
+              "CLJS parity" "Dan" "green"])
+;; => "Task           Owner           State\nParser port         Dan         done\nCLJS parity         Dan        green\n"
+```
+
+## Logical Blocks
+
+*`:logical-block` opens a single sequence argument as a structured block.
+Its prefix and suffix clauses make it a good fit for wrapped notations and
+pretty-printable forms.*
+
+### RGB tuple
+
+```clojure
+(cl-format  nil "~<rgb(~;~D, ~D, ~D~;)~:>" [255 140 0])
+(clj-format nil [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
+             [255 140 0])
+;; => "rgb(255, 140, 0)"
+```
+
+### Bracketed range
+
+```clojure
+(cl-format  nil "~<range[~;~D, ~D~;]~:>" [10 20])
+(clj-format nil [[:logical-block "range[" [:int ", " :int] "]"]]
+             [10 20])
+;; => "range[10, 20]"
+```
+
 ## Indirection
 
 ### Format string from an argument

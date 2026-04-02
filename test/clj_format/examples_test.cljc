@@ -2,18 +2,14 @@
   "Tests every example from doc/examples.md. For each format string, verifies
   that the DSL round-trip (parse → compile → cl-format) produces the same
   output as the original format string."
-  (:require [clojure.test :refer :all]
-            [clojure.pprint :refer [cl-format]]
-            [clj-format.parser :refer [parse-format]]
-            [clj-format.compiler :refer [compile-format]]))
+  (:require [clj-format.test-support :as support]
+            [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]))
 
 (defn- equiv
   "Assert that cl-format produces identical output with the original string
   and with the DSL round-tripped string."
   [fmt-str & args]
-  (let [compiled (compile-format (parse-format fmt-str))
-        expected (apply cl-format nil fmt-str args)
-        actual   (apply cl-format nil compiled args)]
+  (let [{:keys [compiled expected actual]} (apply support/equiv-data fmt-str args)]
     (is (= expected actual)
         (str "Format: " (pr-str fmt-str)
              "\nCompiled: " (pr-str compiled)
@@ -305,6 +301,30 @@
   (testing "CLtL2: padding before first segment"
     (equiv "~10:<foo~;bar~>")
     (equiv "~10:@<foo~;bar~>")))
+
+(deftest task-board-row-test
+  (testing "Three-column status row with evenly distributed padding"
+    (equiv "~36<Task~;Owner~;State~>" "Parser port" "Dan" "done")
+    (equiv "~36<Task~;Owner~;State~>" "CLJS parity" "Dan" "green")))
+
+(deftest three-column-table-test
+  (testing "Header and rows aligned by shared justification width"
+    (equiv "~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}"
+           ["Parser port" "Dan" "done"
+            "CLJS parity" "Dan" "green"])))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Logical Blocks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rgb-tuple-logical-block-test
+  (testing "Logical block can wrap a structured body with prefix and suffix"
+    (equiv "~<rgb(~;~D, ~D, ~D~;)~:>" [255 140 0])))
+
+(deftest range-logical-block-test
+  (testing "Logical block clauses work well for compact bracketed notations"
+    (equiv "~<range[~;~D, ~D~;]~:>" [10 20])))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
