@@ -8,4 +8,6 @@ lein with-profile +cljs run -m cljs.main \
   -t node \
   -d target/cljs-test \
   -o target/cljs-test/tests.js \
-  -m clj-format.cljs-runner
+  -c clj-format.cljs-runner
+
+node target/cljs-test/tests.js
