@@ -191,10 +191,8 @@ Applied as a `:case` option — no extra nesting:
 
 ### Tabular status board with `:justify`
 ```clojure
-(cl-format nil
-  "~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}"
-  ["Parser port" "Dan" "done"
-   "CLJS parity" "Dan" "green"])
+;; cl-format:
+;; ~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}
 
 (clj-format nil
   [[:justify {:width 36} "Task" "Owner" "State"] :nl
@@ -210,14 +208,8 @@ Applied as a `:case` option — no extra nesting:
 
 ### Tabular numeric report with tabs
 ```clojure
-(cl-format nil
-  "~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}"
-  "Name" "Value" "Histogram" "Count"
-  "" "" "" ""
-  [["Alpha" 3.14 5]
-   ["Beta" 12.0 2]
-   ["Gamma" 98.5 9]
-   ["Delta" 42.42 7]])
+;; cl-format:
+;; ~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}
 
 (clj-format nil
   ["Name" [:tab {:col 16}] "Value" [:tab {:col 28}] "Histogram" [:tab {:col 46}] "Count" :nl
@@ -246,7 +238,8 @@ Applied as a `:case` option — no extra nesting:
 
 ### Wrapped notation with `:logical-block`
 ```clojure
-(cl-format nil "~<rgb(~;~D, ~D, ~D~;)~:>" [255 140 0])
+;; cl-format:
+;; ~<rgb(~;~D, ~D, ~D~;)~:>
 
 (clj-format nil
   [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
@@ -256,11 +249,8 @@ Applied as a `:case` option — no extra nesting:
 
 ### Word-wrapped prose
 ```clojure
-(cl-format nil
-  "~%~%~{~<~%~0,20:;~a ~>~}"
-  ["The" "power" "of" "FORMAT" "is"
-   "that" "it" "can" "wrap" "words"
-   "beautifully."])
+;; cl-format:
+;; ~%~%~{~<~%~0,20:;~a ~>~}
 
 (clj-format nil
   "~%~%~{~<~%~0,20:;~a ~>~}"
