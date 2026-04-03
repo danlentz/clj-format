@@ -191,6 +191,11 @@ Applied as a `:case` option — no extra nesting:
 
 ### Tabular status board with `:justify`
 ```clojure
+(cl-format nil
+  "~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}"
+  ["Parser port" "Dan" "done"
+   "CLJS parity" "Dan" "green"])
+
 (clj-format nil
   [[:justify {:width 36} "Task" "Owner" "State"] :nl
    [:each
@@ -205,25 +210,44 @@ Applied as a `:case` option — no extra nesting:
 
 ### Tabular numeric report with tabs
 ```clojure
-(clj-format nil
-  [[:justify {:width 44} "Name" "Value" "Bar" "Count"] :nl
-   [:each {:from :sublists}
-    :str [:tab {:col 12}]
-    [:float {:width 6 :decimals 2}] " "
-    [:tilde {:count :V}] [:tab {:col 36}]
-    :back :int :nl]]
+(cl-format nil
+  "~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}"
+  "Name" "Value" "Histogram" "Count"
+  "" "" "" ""
   [["Alpha" 3.14 5]
    ["Beta" 12.0 2]
-   ["Gamma" 98.5 9]])
+   ["Gamma" 98.5 9]
+   ["Delta" 42.42 7]])
+
+(clj-format nil
+  ["Name" [:tab {:col 16}] "Value" [:tab {:col 28}] "Histogram" [:tab {:col 46}] "Count" :nl
+   [:str {:width 14 :fill \-}] [:tab {:col 16}]
+   [:str {:width 10 :fill \-}] [:tab {:col 28}]
+   [:str {:width 16 :fill \-}] [:tab {:col 46}]
+   [:str {:width 5 :fill \-}] :nl
+   [:each {:from :sublists}
+    :str [:tab {:col 16}]
+    [:float {:width 6 :decimals 2}] [:tab {:col 28}]
+    [:tilde {:count :V}] [:tab {:col 46}]
+    :back :int :nl]]
+  "" "" "" ""
+  [["Alpha" 3.14 5]
+   ["Beta" 12.0 2]
+   ["Gamma" 98.5 9]
+   ["Delta" 42.42 7]])
 ;; =>
-;; Name         Value         Bar         Count
-;; Alpha         3.14 ~~~~~            5
-;; Beta         12.00 ~~               2
-;; Gamma        98.50 ~~~~~~~~~        9
+;; Name            Value       Histogram         Count
+;; --------------  ----------  ----------------  -----
+;; Alpha             3.14      ~~~~~             5
+;; Beta             12.00      ~~                2
+;; Gamma            98.50      ~~~~~~~~~         9
+;; Delta            42.42      ~~~~~~~           7
 ```
 
 ### Wrapped notation with `:logical-block`
 ```clojure
+(cl-format nil "~<rgb(~;~D, ~D, ~D~;)~:>" [255 140 0])
+
 (clj-format nil
   [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
   [255 140 0])
@@ -232,6 +256,12 @@ Applied as a `:case` option — no extra nesting:
 
 ### Word-wrapped prose
 ```clojure
+(cl-format nil
+  "~%~%~{~<~%~0,20:;~a ~>~}"
+  ["The" "power" "of" "FORMAT" "is"
+   "that" "it" "can" "wrap" "words"
+   "beautifully."])
+
 (clj-format nil
   "~%~%~{~<~%~0,20:;~a ~>~}"
   ["The" "power" "of" "FORMAT" "is"
