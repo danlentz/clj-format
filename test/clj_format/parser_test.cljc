@@ -1,7 +1,7 @@
 (ns clj-format.parser-test
   "Tests the parser: parameter parsing, flag translation, every directive,
    compound nesting, and edge cases."
-  (:require [clojure.test :refer :all]
+  (:require [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]
             [clj-format.parser :refer [parse-format]]))
 
 
@@ -77,6 +77,7 @@
 (deftest parse-conditionals-test
   (is (= [[:choose "zero" "one" "two"]] (parse-format "~[zero~;one~;two~]")))
   (is (= [[:choose {:default "other"} "zero" "one"]] (parse-format "~[zero~;one~:;other~]")))
+  (is (= [[:choose nil nil]] (parse-format "~[~;~:;~]")))
   (is (= [[:choose {:selector 1} "a" "b"]] (parse-format "~1[a~;b~]")))
   (is (= [[:choose nil nil nil]] (parse-format "~[~;~;~]")))
   (is (= [[:if "yes" "no"]] (parse-format "~:[no~;yes~]")))
@@ -133,22 +134,24 @@
   (is (= ["a" :nl "b"] (parse-format "a~@\n   b"))))
 
 (deftest parse-unknown-directive-test
-  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~Q")))
+  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo)
+               (parse-format "~Q")))
   (try
     (parse-format "~Q")
     (is false "expected ExceptionInfo")
-    (catch clojure.lang.ExceptionInfo e
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) e
       (is (= :clj-format (:library (ex-data e))))
       (is (= :parse (:phase (ex-data e))))
       (is (= :unknown-directive (:kind (ex-data e))))
       (is (= \Q (:char (ex-data e)))))))
 
 (deftest parse-invalid-special-flags-test
-  (is (thrown? clojure.lang.ExceptionInfo (parse-format "~:@*")))
+  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo)
+               (parse-format "~:@*")))
   (try
     (parse-format "~:@*")
     (is false "expected ExceptionInfo")
-    (catch clojure.lang.ExceptionInfo e
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) e
       (is (= :clj-format (:library (ex-data e))))
       (is (= :parse (:phase (ex-data e))))
       (is (= :invalid-special-flags (:kind (ex-data e))))

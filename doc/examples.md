@@ -621,6 +621,77 @@ args remain. Add more args to reveal more of the message.*
 ;; => "  foo bar "
 ```
 
+### Three-column status row
+
+*A practical use for `:justify`: report rows with evenly distributed padding.*
+
+```clojure
+(cl-format  nil "~36<Task~;Owner~;State~>" "Parser port" "Dan" "done")
+(clj-format nil [:justify {:width 36} "Parser port" "Dan" "done"])
+;; => "Parser port         Dan         done"
+```
+
+### Table with header
+
+```clojure
+(cl-format  nil "~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}"
+             ["Parser port" "Dan" "done"
+              "CLJS parity" "Dan" "green"])
+(clj-format nil [[:justify {:width 36} "Task" "Owner" "State"] :nl
+                 [:each [:justify {:width 36} :str :str :str] :nl]]
+             ["Parser port" "Dan" "done"
+              "CLJS parity" "Dan" "green"])
+;; => "Task           Owner           State\nParser port         Dan         done\nCLJS parity         Dan        green\n"
+```
+
+### Tabular numeric report with tabs
+
+*A denser report layout: tab stops, fixed-width numbers, repeated tildes,
+and argument reuse in one row format.*
+
+```clojure
+(cl-format  nil "~:{~%~a~10t~6,2f ~v~~30t~:*~d~}"
+            [["Alpha" 3.14 5]
+             ["Beta" 12.0 2]])
+(clj-format nil [[:each {:from :sublists}
+                  :nl
+                  :str
+                  [:tab {:col 10}]
+                  [:float {:width 6 :decimals 2}]
+                  " "
+                  [:tilde {:count :V}]
+                  [:tab {:col 30}]
+                  :back
+                  :int]]
+            [["Alpha" 3.14 5]
+             ["Beta" 12.0 2]])
+;; => "\nAlpha       3.14 ~~~~~        5\nBeta       12.00 ~~           2"
+```
+
+## Logical Blocks
+
+*`:logical-block` opens a single sequence argument as a structured block.
+Its prefix and suffix clauses make it a good fit for wrapped notations and
+pretty-printable forms.*
+
+### RGB tuple
+
+```clojure
+(cl-format  nil "~<rgb(~;~D, ~D, ~D~;)~:>" [255 140 0])
+(clj-format nil [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
+             [255 140 0])
+;; => "rgb(255, 140, 0)"
+```
+
+### Bracketed range
+
+```clojure
+(cl-format  nil "~<range[~;~D, ~D~;]~:>" [10 20])
+(clj-format nil [[:logical-block "range[" [:int ", " :int] "]"]]
+             [10 20])
+;; => "range[10, 20]"
+```
+
 ## Indirection
 
 ### Format string from an argument
@@ -651,6 +722,24 @@ args remain. Add more args to reveal more of the message.*
 (cl-format  nil "~A~20T~A" "Name" "Extension")
 (clj-format nil [:str [:tab {:col 20}] :str] "Name" "Extension")
 ;; => "Name                Extension"
+```
+
+### Word-wrapped prose
+
+*One of the classic FORMAT tricks. This example is currently best expressed
+as a raw format string, and `clj-format` still supports it directly via
+string passthrough.*
+
+```clojure
+(cl-format  nil "~%~%~{~<~%~0,20:;~a ~>~}"
+            ["The" "power" "of" "FORMAT" "is"
+             "that" "it" "can" "wrap" "words"
+             "beautifully."])
+(clj-format nil "~%~%~{~<~%~0,20:;~a ~>~}"
+            ["The" "power" "of" "FORMAT" "is"
+             "that" "it" "can" "wrap" "words"
+             "beautifully."])
+;; => "\n\nThe power of FORMAT \nis that it can wrap \nwords beautifully. "
 ```
 
 ## Complex Compositions

@@ -2,7 +2,7 @@
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.danlentz/clj-format.svg)](https://clojars.org/com.github.danlentz/clj-format)
 
-A Clojure DSL for `clojure.pprint/cl-format`.
+A Clojure, ClojureScript, and Babashka-friendly DSL for `cl-format`.
 
 cl-format is extraordinarily powerful — it handles comma-grouped integers, Roman
 numerals, English number words, conditional pluralization, justified text,
@@ -22,8 +22,8 @@ clj-format lets you write the same thing as a Clojure data structure:
   data)
 ```
 
-When given a string, clj-format passes it directly to cl-format — full
-backward compatibility, zero migration cost.
+When given a string, clj-format passes it directly to host `cl-format` —
+full backward compatibility, zero migration cost.
 
 See [50+ side-by-side examples](doc/examples.md) from Practical Common
 Lisp, CLtL2, and the CL HyperSpec.
@@ -49,6 +49,12 @@ Lisp, CLtL2, and the CL HyperSpec.
 (fmt/compile-format [:cardinal " file" [:plural {:rewind true}]])
 ;; => "~R file~:P"
 ```
+
+On ClojureScript, the same public API is available from `clj-format.core`
+and delegates to `cljs.pprint/cl-format`.
+
+On Babashka, the same parser/compiler/core API works, and the full
+JVM-hosted suite is exercised under Babashka in CI.
 
 ## The DSL
 
@@ -183,6 +189,81 @@ Applied as a `:case` option — no extra nesting:
   n results)
 ```
 
+### Tabular status board with `:justify`
+```clojure
+;; cl-format:
+;; ~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}
+
+(clj-format nil
+  [[:justify {:width 36} "Task" "Owner" "State"] :nl
+   [:each
+    [:justify {:width 36} :str :str :str] :nl]]
+  ["Parser port" "Dan" "done"
+   "CLJS parity" "Dan" "green"])
+;; =>
+;; Task           Owner           State
+;; Parser port         Dan         done
+;; CLJS parity         Dan        green
+```
+
+### Tabular numeric report with tabs
+```clojure
+;; cl-format:
+;; ~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}
+
+(clj-format nil
+  ["Name" [:tab {:col 16}] "Value" [:tab {:col 28}] "Histogram" [:tab {:col 46}] "Count" :nl
+   [:str {:width 14 :fill \-}] [:tab {:col 16}]
+   [:str {:width 10 :fill \-}] [:tab {:col 28}]
+   [:str {:width 16 :fill \-}] [:tab {:col 46}]
+   [:str {:width 5 :fill \-}] :nl
+   [:each {:from :sublists}
+    :str [:tab {:col 16}]
+    [:float {:width 6 :decimals 2}] [:tab {:col 28}]
+    [:tilde {:count :V}] [:tab {:col 46}]
+    :back :int :nl]]
+  "" "" "" ""
+  [["Alpha" 3.14 5]
+   ["Beta" 12.0 2]
+   ["Gamma" 98.5 9]
+   ["Delta" 42.42 7]])
+;; =>
+;; Name            Value       Histogram         Count
+;; --------------  ----------  ----------------  -----
+;; Alpha             3.14      ~~~~~             5
+;; Beta             12.00      ~~                2
+;; Gamma            98.50      ~~~~~~~~~         9
+;; Delta            42.42      ~~~~~~~           7
+```
+
+### Wrapped notation with `:logical-block`
+```clojure
+;; cl-format:
+;; ~<rgb(~;~D, ~D, ~D~;)~:>
+
+(clj-format nil
+  [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
+  [255 140 0])
+;; => "rgb(255, 140, 0)"
+```
+
+### Word-wrapped prose
+```clojure
+;; cl-format:
+;; ~%~%~{~<~%~0,20:;~a ~>~}
+
+(clj-format nil
+  "~%~%~{~<~%~0,20:;~a ~>~}"
+  ["The" "power" "of" "FORMAT" "is"
+   "that" "it" "can" "wrap" "words"
+   "beautifully."])
+;; =>
+;;
+;; The power of FORMAT
+;; is that it can wrap
+;; words beautifully.
+```
+
 ### XML tag formatter
 ```clojure
 (clj-format nil
@@ -210,12 +291,18 @@ convenience.
 (clj-format writer fmt & args)
 ```
 
-Drop-in replacement for `clojure.pprint/cl-format`.
+Drop-in replacement for host `cl-format`:
+- `clojure.pprint/cl-format` on the JVM
+- `cljs.pprint/cl-format` in ClojureScript
 
 **`writer`** — output destination:
 - `nil` or `false` — return formatted string
-- `true` — print to `*out*`, return nil
-- a `java.io.Writer` — write to it, return nil
+- `true` — print to the host default output, return nil
+- a writer object — write to it, return nil
+
+Writer details are host-specific:
+- Clojure uses `java.io.Writer`
+- ClojureScript uses `cljs.core/IWriter`
 
 **`fmt`** — format specification:
 - **string** — passed directly to `cl-format` (full backward compatibility)
@@ -287,6 +374,8 @@ lein test clj-format.core-test        # API mechanics
 lein test clj-format.parser-test       # parser tests
 lein test clj-format.compiler-test     # compiler + round-trip tests
 lein test clj-format.examples-test     # cl-format output equivalence
+./bin/test-cljs                        # compile once, run shared CLJS suite via Node
+bb test/clj_format/bb_runner.clj       # full Babashka suite
 lein repl                              # start a REPL
 ```
 

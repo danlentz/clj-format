@@ -1,9 +1,10 @@
 (ns clj-format.core-test
   "Tests the clj-format public API: string passthrough, DSL dispatch,
    writer variants, and DSL/string equivalence."
-  (:require [clojure.test :refer :all]
-            [clojure.pprint :refer [cl-format]]
-            [clj-format.core :refer [clj-format compile-format parse-format]]))
+  (:require [clj-format.core :refer [clj-format compile-format parse-format]]
+            [clj-format.test-support :as support]
+            [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]
+            [#?(:clj clojure.pprint :cljs cljs.pprint) :refer [cl-format]]))
 
 
 (deftest exposed-helpers-test
@@ -44,20 +45,35 @@
   (is (= "hello" (clj-format nil "~A" "hello")) "nil returns string")
   (is (= "hello" (clj-format false "~A" "hello")) "false returns string")
   (is (= "hello" (with-out-str (clj-format true "~A" "hello"))) "true prints to *out*")
-  (let [sw (java.io.StringWriter.)]
+  (let [sw (support/make-writer)]
     (clj-format sw "~A" "hello")
-    (is (= "hello" (.toString sw)) "Writer receives output")))
+    (is (= "hello" (support/writer-content sw)) "Writer receives output")))
 
 (deftest invalid-format-spec-test
-  (is (thrown? clojure.lang.ExceptionInfo (clj-format nil 42 "bad")))
+  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo)
+               (clj-format nil 42 "bad")))
   (try
     (clj-format nil 42 "bad")
     (is false "expected ExceptionInfo")
-    (catch clojure.lang.ExceptionInfo e
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) e
       (is (= {:library :clj-format
               :phase :api
               :kind :invalid-format-spec
               :fmt 42}
+             (ex-data e))))))
+
+(deftest invalid-output-target-test
+  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo)
+               (clj-format 42 "~A" "bad")))
+  (try
+    (clj-format 42 "~A" "bad")
+    (is false "expected ExceptionInfo")
+    (catch #?(:clj clojure.lang.ExceptionInfo :cljs cljs.core.ExceptionInfo) e
+      (is (= {:library :clj-format
+              :phase :api
+              :kind :invalid-output-target
+              :target 42
+              :platform support/platform}
              (ex-data e))))))
 
 (deftest dsl-string-equivalence-test

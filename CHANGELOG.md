@@ -5,10 +5,27 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-02
+
+### Added
+- ClojureScript compatibility via shared `.cljc` parser/compiler/directive
+  namespaces plus a unified `clj-format.core` (`.cljc`) that delegates to
+  the host `cl-format` on both JVM and ClojureScript.
+- Babashka compatibility — full test suite passes under `bb`.
+- CLJS test coverage and runnable CLJS test entry points for both `lein`
+  and `deps.edn` workflows.
+- Generative property-based tests via `test.check` for DSL canonicalization,
+  compile idempotence, execution equivalence, and structured error reporting.
+- Host-parity tests pinning floating-point, monetary, justification, and
+  logical-block output across JVM and ClojureScript.
+
 ### Changed
 - Refactored special-dispatch directives (`~R`, `~*`, `~_`) to use shared
   data-driven metadata in `clj-format.directives`, simplifying parser and
   compiler logic while preserving behavior.
+- The public `clj-format` API now validates output targets and reports
+  invalid ones with structured `ExceptionInfo`.
+- Clojure dependency is now `:scope "provided"` in `project.clj`.
 
 ### Fixed
 - Preserved `~C` flag combinations during parse/compile round-trips,
