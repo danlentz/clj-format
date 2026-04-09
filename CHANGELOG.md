@@ -5,6 +5,29 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.1.2-SNAPSHOT]
+
+### Added
+- Clause-local `~;` support for `:justify` and `:logical-block` via
+  `[:clause opts & body]`, allowing the DSL to preserve and compile
+  separator-local parameters and flags such as `~0,20:;`.
+- Full DSL coverage and documentation for the word-wrapping `~<...~>`
+  example that previously had to be shown as string passthrough only.
+
+### Changed
+- The README and examples now include stronger layout showcases, including
+  richer tabular-report examples and a real DSL rendering of word-wrapped
+  prose.
+- The CLJS test runner script was restored to a compile-then-Node flow so
+  CI and local runs exit cleanly instead of hanging in `cljs.main`.
+- GitHub Actions now runs the JVM suite, the CLJS/Node suite, and the full
+  Babashka suite.
+
+### Fixed
+- Parser and compiler now round-trip clause-local `~;` behavior correctly
+  in justification forms, with regression coverage across JVM, CLJS, and
+  Babashka.
+
 ## [0.1.1] - 2026-04-02
 
 ### Added

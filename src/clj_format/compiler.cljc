@@ -167,17 +167,66 @@
     (nil? clause)     ""
     (string? clause)  (escape-tildes clause)
     (keyword? clause) (compile-element clause)
-    (vector? clause)  (if (keyword? (first clause))
-                        (compile-element clause)
-                        (compile-body clause))
+    (vector? clause)  (cond
+                       (= :clause (first clause))
+                       (let [[_ maybe-opts & body] clause
+                             [opts children] (if (map? maybe-opts)
+                                               [maybe-opts body]
+                                               [{} (cons maybe-opts body)])]
+                         (when (empty? children)
+                           (invalid-dsl "Clause wrapper must contain body elements"
+                                        {:kind :invalid-clause
+                                         :clause clause}))
+                         {:separator-opts opts
+                          :body (compile-body children)})
+
+                       (keyword? (first clause))
+                       (compile-element clause)
+
+                       :else
+                       (compile-body clause))
     :else             (invalid-dsl "Unreachable invalid clause"
                                    {:kind :invalid-clause
                                     :clause clause})))
 
+(defn- compile-plain-clause
+  "Compile a clause for constructs that do not support clause-local separator
+   options. Rejects [:clause ...] wrappers outside justification/logical blocks."
+  [clause]
+  (let [compiled (compile-clause clause)]
+    (if (map? compiled)
+      (invalid-dsl "Clause-local separator options are only valid in :justify and :logical-block"
+                   {:kind :invalid-clause
+                    :clause clause})
+      compiled)))
+
 (defn- join-clauses
   "Compile clauses and join with ~; separators."
   [clauses]
-  (str/join "~;" (map compile-clause clauses)))
+  (letfn [(separator-fragment [{:keys [width pad-step min-pad fill pad-before pad-after]}]
+            (str "~"
+                 (format-params [:width :pad-step :min-pad :fill]
+                                {:width width
+                                 :pad-step pad-step
+                                 :min-pad min-pad
+                                 :fill fill})
+                 (when pad-before ":")
+                 (when pad-after "@")
+                 ";"))
+          (normalize-clause [clause]
+            (let [compiled (compile-clause clause)]
+              (if (map? compiled)
+                compiled
+                {:separator-opts {}
+                 :body compiled})))]
+    (loop [[clause & more] (map normalize-clause clauses)
+           acc ""]
+      (if clause
+        (let [acc (str acc (:body clause))]
+          (if-let [next-clause (first more)]
+            (recur more (str acc (separator-fragment (:separator-opts next-clause))))
+            acc))
+        acc))))
 
 (defn- compile-simple
   "Compile a simple (non-compound) directive using shared config."
@@ -218,7 +267,7 @@
   [opts then-clause else-clause]
   (maybe-wrap-case opts
     (fn [_]
-      (str "~:[" (compile-clause else-clause) "~;" (compile-clause then-clause) "~]"))))
+      (str "~:[" (compile-plain-clause else-clause) "~;" (compile-plain-clause then-clause) "~]"))))
 
 (defn- compile-when-cond
   "Compile [:when opts? & body] -> ~@[body~]"
@@ -231,9 +280,9 @@
   [opts clauses]
   (maybe-wrap-case opts
     (fn [{:keys [selector default]}]
-      (let [joined (join-clauses clauses)]
+      (let [joined (str/join "~;" (map compile-plain-clause clauses))]
         (str "~" (some-> selector format-param)
-             "[" (if default (str joined "~:;" (compile-clause default)) joined)
+             "[" (if default (str joined "~:;" (compile-plain-clause default)) joined)
              "~]")))))
 
 (defn- compile-justify

@@ -726,16 +726,19 @@ pretty-printable forms.*
 
 ### Word-wrapped prose
 
-*One of the classic FORMAT tricks. This example is currently best expressed
-as a raw format string, and `clj-format` still supports it directly via
-string passthrough.*
+*One of the classic FORMAT tricks. Clause-local `~;` parameters are preserved
+with `[:clause opts ...]` wrappers inside `:justify`.*
 
 ```clojure
 (cl-format  nil "~%~%~{~<~%~0,20:;~a ~>~}"
             ["The" "power" "of" "FORMAT" "is"
              "that" "it" "can" "wrap" "words"
              "beautifully."])
-(clj-format nil "~%~%~{~<~%~0,20:;~a ~>~}"
+(clj-format nil [:nl :nl
+                 [:each
+                  [:justify :nl
+                   [:clause {:width 0 :pad-step 20 :pad-before true}
+                    :str " "]]]]
             ["The" "power" "of" "FORMAT" "is"
              "that" "it" "can" "wrap" "words"
              "beautifully."])

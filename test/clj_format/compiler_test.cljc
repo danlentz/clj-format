@@ -30,7 +30,11 @@
   (is (= "~8,'0D" (compile-format [[:int {:width 8 :fill \0}]])))
   (is (= "~8,2F" (compile-format [[:float {:width 8 :decimals 2}]])))
   (is (= "~,,2F" (compile-format [[:float {:scale 2}]])))
-  (is (= "~2,1,10$" (compile-format [[:money {:decimals 2 :int-digits 1 :width 10}]]))))
+  (is (= "~2,1,10$" (compile-format [[:money {:decimals 2 :int-digits 1 :width 10}]])))
+  (is (= "~:$" (compile-format [[:money {:sign-first true}]])))
+  (is (= "~0^" (compile-format [[:stop {:arg1 0}]])))
+  (is (= "~1,2^" (compile-format [[:stop {:arg1 1 :arg2 2}]])))
+  (is (= "~1,2,3^" (compile-format [[:stop {:arg1 1 :arg2 2 :arg3 3}]]))))
 
 (deftest compile-flags-test
   (is (= "~:D" (compile-format [[:int {:group true}]])))
@@ -39,6 +43,9 @@
   (is (= "~@A" (compile-format [[:str {:pad :left}]])))
   (is (= "~:P" (compile-format [[:plural {:rewind true}]])))
   (is (= "~@P" (compile-format [[:plural {:form :ies}]])))
+  (is (= "~:W" (compile-format [[:write {:pretty true}]])))
+  (is (= "~@W" (compile-format [[:write {:full true}]])))
+  (is (= "~:@W" (compile-format [[:write {:pretty true :full true}]])))
   (is (= "~:C" (compile-format [[:char {:name true}]])))
   (is (= "~@C" (compile-format [[:char {:readable true}]])))
   (is (= "~:@C" (compile-format [[:char {:name true :readable true}]])))
@@ -63,6 +70,8 @@
   (is (= "~[zero~;one~]" (compile-format [[:choose "zero" "one"]])))
   (is (= "~[zero~;one~:;other~]" (compile-format [[:choose {:default "other"} "zero" "one"]])))
   (is (= "~40<left~;right~>" (compile-format [[:justify {:width 40} "left" "right"]])))
+  (is (= "~<~%~0,20:;~A ~>"
+         (compile-format [[:justify :nl [:clause {:width 0 :pad-step 20 :pad-before true} :str " "]]])))
   (is (= "~<~A~:>" (compile-format [[:logical-block :str]])))
   (is (= "~(the ~A~)" (compile-format [[:downcase "the " :str]]))))
 
@@ -81,7 +90,7 @@
   (compile-format (parse-format s)))
 
 (deftest round-trip-simple-test
-  (doseq [s ["~A" "~S" "~W" "~C" "~D" "~B" "~O" "~X" "~P"
+  (doseq [s ["~A" "~S" "~W" "~:W" "~@W" "~:@W" "~C" "~D" "~B" "~O" "~X" "~P"
              "~F" "~E" "~G" "~$" "~%" "~&" "~|" "~T" "~~"
              "~?" "~^" "~I" "~*" "~_"
              "~R" "~:R" "~@R" "~:@R" "~:*" "~@*"
@@ -105,7 +114,7 @@
              "~(~A~)" "~:(~A~)" "~@(~A~)" "~:@(~A~)"
              "~(the ~A is ~A~)"
              "~<left~;right~>" "~40<left~;right~>"
-             "~:<a~;b~>" "~<~A~:>" "~<(~;~A~;)~:>"]]
+             "~:<a~;b~>" "~<~%~0,20:;~A ~>" "~<~A~:>" "~<(~;~A~;)~:>"]]
     (is (= s (round-trip s)) (str "round-trip: " s))))
 
 (deftest round-trip-complex-test
@@ -133,9 +142,10 @@
 
 (deftest compile-invalid-dsl-test
   (doseq [[dsl kind]
-          [[[:bogus] :unknown-directive]
+           [[[:bogus] :unknown-directive]
            [[[:str 1]] :invalid-element]
            [[[:if]] :invalid-child-count]
+           [[[:if [:clause {:width 1} :str] "x"]] :invalid-clause]
            [[[:downcase {:foo true} :str]] :invalid-options]
            [[1] :invalid-element]
            [42 :invalid-root]]]
