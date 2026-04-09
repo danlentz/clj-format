@@ -8,11 +8,33 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 ## [0.1.2-SNAPSHOT]
 
 ### Added
+- **Table formatting facility** (`clj-format.table`): Declarative tabular
+  output built entirely on the clj-format DSL. Constructs a single DSL
+  expression per table and renders it in one `clj-format` call.
+  - Nine border styles: `:ascii`, `:unicode`, `:rounded`, `:heavy`,
+    `:double`, `:markdown`, `:org`, `:simple`, `:none`, plus custom maps.
+  - Per-column alignment (`:left`, `:right`, `:center`), auto-sizing,
+    fixed widths, min/max constraints.
+  - Cell formatting via any DSL directive: `:int`, `:money`, `:roman`,
+    `[:int {:group true}]`, `[:if "Yes" "No"]`, `[:money {:sign :always}]`,
+    or custom `(fn [v] string)`.
+  - Text overflow handling: ellipsis truncation (`"..."`) and clip mode.
+  - Footer rows with built-in aggregates (`:sum`, `:avg`, `:min`, `:max`,
+    `:count`) or custom aggregate functions.
+  - Computed columns via `:key (fn [row] value)`.
+  - Header case conversion, header suppression, row rules, nil-value
+    display, and per-column title overrides.
+  - `table-dsl` function exposes the generated DSL for inspection and reuse.
+  - `doc/table.md` tutorial with 18+ rendered examples.
 - Clause-local `~;` support for `:justify` and `:logical-block` via
   `[:clause opts & body]`, allowing the DSL to preserve and compile
   separator-local parameters and flags such as `~0,20:;`.
 - Full DSL coverage and documentation for the word-wrapping `~<...~>`
   example that previously had to be shown as string passthrough only.
+- Adversarial input tests via the Big List of Naughty Strings (BLNS),
+  verifying crash-free round-trips through the compiler, parser, and table
+  formatter for ~670 strings including Unicode edge cases, control
+  characters, zero-width joiners, emoji, RTL text, and Zalgo.
 
 ### Changed
 - The README and examples now include stronger layout showcases, including
