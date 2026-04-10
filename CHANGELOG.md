@@ -34,8 +34,9 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
     display, and per-column title overrides.
   - `clj-format.core/table-dsl` exposes the generated DSL + argument
     list for inspection and reuse.
-  - `doc/table.md` tutorial with graduated, worked examples for every
-    feature.
+  - Worked examples in the README covering typed columns, word wrap,
+    multi-line embedding (nested tables and FIGlet banners), markdown
+    output, and footer aggregation.
 - **Optional `:figlet` directive** via `clj-format.figlet` — renders
   FIGlet ASCII-art banners using
   [clj-figlet](https://github.com/danlentz/clj-figlet). Requiring the

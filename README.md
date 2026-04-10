@@ -287,85 +287,229 @@ Applied as a `:case` option — no extra nesting:
 ## Tables
 
 Tables are a first-class DSL form: `[:table opts? & cols]`. They render
-through the same `clj-format` entry point, with the same writer semantics,
-as every other format call.
+through the same `clj-format` entry point as every other format call —
+no separate function, no new writer rules — and the `[:col :key opts]`
+children are Hiccup all the way down. Every column `:format` accepts
+any directive from the clj-format DSL, so every feature of the library
+composes into a table cell.
 
 ```clojure
-(def products
-  [{:product "Widget"   :qty 1200  :price 9.99}
-   {:product "Gadget"   :qty 42    :price 24.50}
-   {:product "Sprocket" :qty 85000 :price 3.75}])
+(fmt/clj-format nil  [:table ...] rows)   ;; return string
+(fmt/clj-format true [:table ...] rows)   ;; print to *out*
+(fmt/clj-format sw   [:table ...] rows)   ;; write to a Writer
+```
+
+### A report in a single spec
+
+Five distinct directives — Roman numerals, signed grouped integers,
+boolean dispatch, signed currency, and centered alignment — inside
+rounded Unicode borders with uppercased headers. Every directive
+composes with every other; the whole table compiles to a single
+cl-format call.
+
+```clojure
+(def players
+  [{:rank 1 :name "Alice" :score 1250 :active true  :balance 50.0}
+   {:rank 2 :name "Bob"   :score 890  :active true  :balance -12.30}
+   {:rank 3 :name "Carol" :score 450  :active false :balance 0.0}])
+
+(fmt/clj-format true
+  [:table {:style :rounded :header-case :upcase}
+    [:col :rank    {:width 8  :align :center :format :roman}]
+    [:col :name    {:width 15}]
+    [:col :score   {:width 12 :align :right  :format [:int {:group true :sign :always}]}]
+    [:col :active  {:width 10 :align :center :format [:if "Yes" "No"]}]
+    [:col :balance {:width 14 :align :right  :format [:money {:sign :always}]}]]
+  players)
+```
+```
+╭──────────┬─────────────────┬──────────────┬────────────┬────────────────╮
+│   RANK   │ NAME            │        SCORE │   ACTIVE   │        BALANCE │
+├──────────┼─────────────────┼──────────────┼────────────┼────────────────┤
+│     I    │ Alice           │       +1,250 │     Yes    │         +50.00 │
+│    II    │ Bob             │         +890 │     Yes    │         -12.30 │
+│    III   │ Carol           │         +450 │     No     │          +0.00 │
+╰──────────┴─────────────────┴──────────────┴────────────┴────────────────╯
+```
+
+### Word wrap beside typed columns
+
+`:overflow :wrap` expands a long prose cell across multiple physical
+rows while sibling columns keep their typed formatting on the first
+line. Monetary columns stay right-aligned and monetary-formatted; the
+name column elides; the description wraps cleanly at word boundaries.
+
+```clojure
+(def catalog
+  [{:name "Widget Pro"
+    :description "Premium widget with extended warranty and free shipping worldwide"
+    :price 49.99}
+   {:name "Gadget"      :description "Basic gadget"                                  :price 24.50}
+   {:name "Sprocket Deluxe"
+    :description "High-quality precision sprocket for industrial applications"
+    :price 12.75}])
 
 (fmt/clj-format true
   [:table {:style :unicode :header-case :upcase}
-    [:col :product {:width 15}]
-    [:col :qty     {:width 10 :align :right :format [:int {:group true}]}]
-    [:col :price   {:width 12 :align :right :format :money}]]
-  products)
+    [:col :name        {:width 12}]
+    [:col :description {:width 25 :overflow :wrap}]
+    [:col :price       {:width 10 :align :right :format :money}]]
+  catalog)
 ```
 ```
-┌─────────────────┬────────────┬──────────────┐
-│ PRODUCT         │        QTY │        PRICE │
-├─────────────────┼────────────┼──────────────┤
-│ Widget          │      1,200 │         9.99 │
-│ Gadget          │         42 │        24.50 │
-│ Sprocket        │     85,000 │         3.75 │
-└─────────────────┴────────────┴──────────────┘
+┌──────────────┬───────────────────────────┬────────────┐
+│ NAME         │ DESCRIPTION               │      PRICE │
+├──────────────┼───────────────────────────┼────────────┤
+│ Widget Pro   │ Premium widget with       │      49.99 │
+│              │ extended warranty and     │            │
+│              │ free shipping worldwide   │            │
+│ Gadget       │ Basic gadget              │      24.50 │
+│ Sprocket ... │ High-quality precision    │      12.75 │
+│              │ sprocket for industrial   │            │
+│              │ applications              │            │
+└──────────────┴───────────────────────────┴────────────┘
 ```
 
-Terser forms are also supported — bare keyword columns and full inference:
+### Anything multi-line goes in a cell
+
+Wrap mode preserves interior whitespace verbatim, so any pre-formatted
+string drops cleanly into a cell. An ASCII inner table rendered as a
+column `:format` sits inside a Unicode outer table:
 
 ```clojure
-;; Bare-keyword columns
-(fmt/clj-format true [:table :name :age :role] staff)
+(def inner
+  (fn [rows]
+    (fmt/clj-format nil
+      [:table {:style :ascii :header false}
+        [:col :k {:width 5}]
+        [:col :v {:width 5 :align :right}]]
+      rows)))
 
-;; Infer columns from the first row
-(fmt/clj-format true [:table {:style :rounded}] staff)
+(fmt/clj-format true
+  [:table {:style :unicode}
+    [:col :group   {:width 10}]
+    [:col :details {:width 22 :overflow :wrap :format inner}]]
+  [{:group "Team A" :details [{:k "Mon" :v 10} {:k "Tue" :v 15} {:k "Wed" :v 8}]}
+   {:group "Team B" :details [{:k "Mon" :v 7}  {:k "Tue" :v 12}]}])
+```
+```
+┌────────────┬────────────────────────┐
+│ Group      │ Details                │
+├────────────┼────────────────────────┤
+│ Team A     │ +-------+-------+      │
+│            │ | Mon   |    10 |      │
+│            │ | Tue   |    15 |      │
+│            │ | Wed   |     8 |      │
+│            │ +-------+-------+      │
+│ Team B     │ +-------+-------+      │
+│            │ | Mon   |     7 |      │
+│            │ | Tue   |    12 |      │
+│            │ +-------+-------+      │
+└────────────┴────────────────────────┘
 ```
 
-Column formats accept any DSL directive — `:int`, `:money`, `:roman`,
-`[:int {:group true :sign :always}]`, `[:if "Yes" "No"]`, or a custom
-`(fn [v] string)`.
-
-Nine border styles: `:ascii`, `:unicode`, `:rounded`, `:heavy`, `:double`,
-`:markdown`, `:org`, `:simple`, `:none`.
-
-Features include per-column alignment, auto-sizing, text elision, word
-wrapping (`:overflow :wrap`), footer rows with aggregation (`:sum`,
-`:avg`, `:min`, `:max`, `:count`), computed columns, header case
-conversion, row rules, and nil-value display.
-
-See the [table tutorial](doc/table.md) for graduated, worked examples.
-
-## FIGlet Banners
-
-The optional `:figlet` directive produces ASCII-art banners via
-[clj-figlet](https://github.com/danlentz/clj-figlet). It is packaged as
-an extension: add `[com.github.danlentz/clj-figlet "0.1.4"]` to your
-project and require `clj-format.figlet` once at startup to enable it.
+The same recipe — `:overflow :wrap` plus a function `:format` — works
+for any multi-line content. Load the optional `clj-format.figlet`
+extension, carry a `:font` on each row, and `clj-figlet.core/render`
+becomes a computed column. Every row picks its own font:
 
 ```clojure
 (require 'clj-format.figlet)
+(require '[clj-figlet.core :as cf])
 
 (fmt/clj-format true
-  [[:figlet {:font "small"} "WELCOME"] :nl
-   "Enter your name: " :str :nl]
-  "Alice")
+  [:table {:style :unicode}
+    [:col :name {:width 12}]
+    [:col (fn [row] (cf/render (:font row) (:banner row)))
+          {:title "Banner" :width 36 :overflow :wrap}]]
+  [{:name "Alice" :banner "HELLO" :font "small"}
+   {:name "Bob"   :banner "HI"    :font "slant"}])
 ```
 ```
-__      _____ _    ___ ___  __  __ ___
-\ \    / / __| |  / __/ _ \|  \/  | __|
- \ \/\/ /| _|| |_| (_| (_) | |\/| | _|
-  \_/\_/ |___|____\___\___/|_|  |_|___|
+┌──────────────┬──────────────────────────────────────┐
+│ Name         │ Banner                               │
+├──────────────┼──────────────────────────────────────┤
+│ Alice        │  _  _ ___ _    _    ___              │
+│              │ | || | __| |  | |  / _ \             │
+│              │ | __ | _|| |__| |_| (_) |            │
+│              │ |_||_|___|____|____\___/             │
+│ Bob          │     __  ______                       │
+│              │    / / / /  _/                       │
+│              │   / /_/ // /                         │
+│              │  / __  // /                          │
+│              │ /_/ /_/___/                          │
+└──────────────┴──────────────────────────────────────┘
+```
 
-Enter your name: Alice
+The `clj-format.figlet` extension is opt-in: add
+`[com.github.danlentz/clj-figlet "0.1.4"]` to your dependencies and
+require `clj-format.figlet` once at startup to enable it. When loaded
+it also installs a `[:figlet ...]` DSL directive for standalone
+banners anywhere else in the DSL.
+
+### Markdown for docs and READMEs
+
+One style keyword produces GitHub-flavored markdown with per-column
+alignment markers in the header rule. The table stays aligned in the
+raw markdown source *and* in the rendered document:
+
+```clojure
+(fmt/clj-format true
+  [:table {:style :markdown}
+    [:col :name  {:width 12}]
+    [:col :score {:width 8 :align :right}]
+    [:col :grade {:width 8 :align :center}]]
+  [{:name "Alice" :score 95 :grade "A"}
+   {:name "Bob"   :score 82 :grade "B"}
+   {:name "Carol" :score 71 :grade "C"}])
+```
+```
+| Name         |    Score |   Grade  |
+| :----------- | -------: | :------: |
+| Alice        |       95 |     A    |
+| Bob          |       82 |     B    |
+| Carol        |       71 |     C    |
 ```
 
-The body must be literal strings; the form is expanded at preprocessing
-time. Requiring `clj-format.figlet` installs an expander into
-`clj-format.core/*dsl-preprocessor*`. Projects that don't need figlet
-simply omit both the dependency and the require — the directive is
-inert until enabled.
+### Aggregation in the footer
+
+`:footer` computes `:sum`, `:avg`, `:min`, `:max`, `:count`, or any
+custom function across the data and renders the result as a new row
+with the same column directives — so a summed quantity stays
+comma-grouped, a summed price stays monetary:
+
+```clojure
+(def inventory
+  [{:item "Widget"   :qty 100  :price 9.99}
+   {:item "Gadget"   :qty 42   :price 24.50}
+   {:item "Sprocket" :qty 1200 :price 3.75}])
+
+(fmt/clj-format true
+  [:table {:style :unicode :header-case :upcase
+           :footer {:label "Total" :fns {:qty :sum :price :sum}}}
+    [:col :item  {:width 15}]
+    [:col :qty   {:width 10 :align :right :format [:int {:group true}]}]
+    [:col :price {:width 12 :align :right :format :money}]]
+  inventory)
+```
+```
+┌─────────────────┬────────────┬──────────────┐
+│ ITEM            │        QTY │        PRICE │
+├─────────────────┼────────────┼──────────────┤
+│ Widget          │        100 │         9.99 │
+│ Gadget          │         42 │        24.50 │
+│ Sprocket        │      1,200 │         3.75 │
+├─────────────────┼────────────┼──────────────┤
+│ Total           │      1,342 │        38.24 │
+└─────────────────┴────────────┴──────────────┘
+```
+
+Column source and option docstrings live in
+[`src/clj_format/table.cljc`](src/clj_format/table.cljc); nine border
+styles ship built-in (`:ascii`, `:unicode`, `:rounded`, `:heavy`,
+`:double`, `:markdown`, `:org`, `:simple`, `:none`), and every column
+option (width, alignment, overflow, case, title, computed keys) is
+documented there.
 
 ## API
 
