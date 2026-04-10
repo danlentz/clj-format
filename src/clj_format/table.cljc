@@ -13,13 +13,19 @@
         [:col :qty  {:align :right :format [:int {:group true}]}]]
       products)
 
-  This namespace exposes two low-level entry points:
+  This namespace exposes two entry points:
     - table-dsl — build the DSL body + argument list for inspection
-    - render-to — internal dispatch target used by clj-format"
-  (:require [clojure.string           :as str]
+    - render-to — internal dispatch target used by clj-format
+
+  Architecture is a strict pipeline. Every cell is preprocessed to a
+  string at prep time; the rendered DSL uses `:str` directives
+  exclusively. This trades a less showcase-y generated DSL for one
+  uniform rendering path, single-mode semantics, and dramatically
+  simpler cell and row construction."
+  (:require [clojure.string       :as str]
             #?(:clj  [clojure.pprint :as pp]
                :cljs [cljs.pprint    :as pp])
-            [clj-format.compiler     :as compiler]))
+            [clj-format.compiler  :as compiler]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -28,31 +34,61 @@
 
 
 (def ^:private +border-styles+
-  "Character sets for each named border style."
-  {:ascii   {:tl "+" :tr "+" :bl "+" :br "+"
-             :tt "+" :bt "+" :lt "+" :rt "+" :cross "+"
-             :h "-" :v "|"}
-   :unicode {:tl "┌" :tr "┐" :bl "└" :br "┘"
-             :tt "┬" :bt "┴" :lt "├" :rt "┤" :cross "┼"
-             :h "─" :v "│"}
-   :rounded {:tl "╭" :tr "╮" :bl "╰" :br "╯"
-             :tt "┬" :bt "┴" :lt "├" :rt "┤" :cross "┼"
-             :h "─" :v "│"}
-   :heavy   {:tl "┏" :tr "┓" :bl "┗" :br "┛"
-             :tt "┳" :bt "┻" :lt "┣" :rt "┫" :cross "╋"
-             :h "━" :v "┃"}
-   :double  {:tl "╔" :tr "╗" :bl "╚" :br "╝"
-             :tt "╦" :bt "╩" :lt "╠" :rt "╣" :cross "╬"
-             :h "═" :v "║"}
-   :markdown {:h "-" :v "|" :markdown true}
-   :org     {:tl "|" :tr "|" :bl "|" :br "|"
-             :tt "+" :bt "+" :lt "|" :rt "|" :cross "+"
-             :h "-" :v "|"}
-   :simple  {:h "-" :sep "  " :borderless true}
-   :none    {:sep "  " :borderless true :no-rules true}})
+  "Fully declarative style configurations.
+
+   Every style carries explicit flags describing which rules and
+   borders it emits, so downstream rule/row builders never need to
+   special-case a style by name:
+
+     :outer?    rows have left/right border characters
+     :top?      emit a top border rule
+     :bottom?   emit a bottom border rule
+     :mid?      emit a mid rule (under header, above footer, between rows)
+     :markdown? use markdown alignment markers for the mid rule
+
+   Character keys (when present):
+     :h         horizontal fill character
+     :v         vertical separator character
+     :tl :tr :bl :br   four corners
+     :tt :bt           top/bottom T-junctions
+     :lt :rt           left/right T-junctions
+     :cross            interior crossroads
+     :sep              column separator for borderless styles"
+  {:ascii    {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "-" :v "|"
+              :tl "+" :tr "+" :bl "+" :br "+"
+              :tt "+" :bt "+" :lt "+" :rt "+" :cross "+"}
+   :unicode  {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "─" :v "│"
+              :tl "┌" :tr "┐" :bl "└" :br "┘"
+              :tt "┬" :bt "┴" :lt "├" :rt "┤" :cross "┼"}
+   :rounded  {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "─" :v "│"
+              :tl "╭" :tr "╮" :bl "╰" :br "╯"
+              :tt "┬" :bt "┴" :lt "├" :rt "┤" :cross "┼"}
+   :heavy    {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "━" :v "┃"
+              :tl "┏" :tr "┓" :bl "┗" :br "┛"
+              :tt "┳" :bt "┻" :lt "┣" :rt "┫" :cross "╋"}
+   :double   {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "═" :v "║"
+              :tl "╔" :tr "╗" :bl "╚" :br "╝"
+              :tt "╦" :bt "╩" :lt "╠" :rt "╣" :cross "╬"}
+   :markdown {:outer? true  :top? false :bottom? false :mid? true  :markdown? true
+              :h "-" :v "|"
+              :tl "|" :tr "|" :bl "|" :br "|"
+              :tt "|" :bt "|" :lt "|" :rt "|" :cross "|"}
+   :org      {:outer? true  :top? true  :bottom? true  :mid? true
+              :h "-" :v "|"
+              :tl "|" :tr "|" :bl "|" :br "|"
+              :tt "+" :bt "+" :lt "|" :rt "|" :cross "+"}
+   :simple   {:outer? false :top? false :bottom? false :mid? true
+              :h "-" :sep "  "}
+   :none     {:outer? false :top? false :bottom? false :mid? false
+              :sep "  "}})
 
 (defn- resolve-style
-  "Resolve a style keyword or map into a style configuration."
+  "Resolve a style keyword or custom map into a style configuration."
   [style]
   (cond
     (nil? style)     (+border-styles+ :ascii)
@@ -67,36 +103,53 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defn- rule-string
-  "Build a horizontal rule line for the given position and column widths.
-   position is :top, :mid, or :bottom."
-  [style position widths]
-  (let [{:keys [h tl tr tt bl br bt lt rt cross sep borderless]} style
-        dash (or h "-")]
-    (if borderless
-      ;; Borderless: segments separated by spaces
-      (str/join (or sep "  ") (map #(apply str (repeat % dash)) widths))
-      ;; Bordered: junctions + dash segments (width + 2 for cell padding)
-      (let [[left right junc]
-            (case position
-              :top    [(or tl "+") (or tr "+") (or tt "+")]
-              :mid    [(or lt "+") (or rt "+") (or cross "+")]
-              :bottom [(or bl "+") (or br "+") (or bt "+")])]
-        (str left
-             (str/join junc (map #(apply str (repeat (+ % 2) dash)) widths))
-             right)))))
+(defn- repeat-str
+  "Repeat a single character/string `n` times and concatenate."
+  [n s]
+  (apply str (repeat n s)))
 
 (defn- markdown-rule-string
-  "Build a markdown header rule with alignment markers."
+  "Build the markdown header rule, using per-column alignment markers."
   [widths aligns]
   (let [segments (map (fn [w align]
-                        (let [inner (- w 2)]
+                        (let [inner (max (- w 2) 0)]
                           (case (or align :left)
-                            :left   (str ":" (apply str (repeat (max inner 0) "-")) "-")
-                            :right  (str "-" (apply str (repeat (max inner 0) "-")) ":")
-                            :center (str ":" (apply str (repeat (max inner 0) "-")) ":"))))
+                            :left   (str ":" (repeat-str (inc inner) "-"))
+                            :right  (str (repeat-str (inc inner) "-") ":")
+                            :center (str ":" (repeat-str inner "-") ":"))))
                       widths aligns)]
     (str "| " (str/join " | " segments) " |")))
+
+(defn- bordered-rule-string
+  "Build a rule for a bordered style at the given position."
+  [style position widths]
+  (let [{:keys [h tl tr tt bl br bt lt rt cross]} style
+        dash (or h "-")
+        [left right junc] (case position
+                            :top    [tl tr tt]
+                            :mid    [lt rt cross]
+                            :bottom [bl br bt])]
+    (str left
+         (str/join junc (map #(repeat-str (+ % 2) dash) widths))
+         right)))
+
+(defn- borderless-rule-string
+  "Build a rule for a borderless style (simple, none, or custom)."
+  [style widths]
+  (let [dash (or (:h style) "-")
+        sep  (or (:sep style) "  ")]
+    (str/join sep (map #(repeat-str % dash) widths))))
+
+(defn- rule-string
+  "Dispatch to the rule builder appropriate for the style.
+
+   `position` is :top, :mid, or :bottom. `aligns` is used only by
+   markdown; other styles ignore it."
+  [style position widths aligns]
+  (cond
+    (:markdown? style) (markdown-rule-string widths aligns)
+    (:outer? style)    (bordered-rule-string style position widths)
+    :else              (borderless-rule-string style widths)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -105,8 +158,7 @@
 
 
 (defn- humanize-key
-  "Convert a keyword to a human-readable title.
-   :created-at => \"Created At\", :name => \"Name\".
+  "Convert a keyword into a human-readable title.
    Returns nil for non-keyword keys (computed columns)."
   [k]
   (when (keyword? k)
@@ -115,9 +167,9 @@
          (str/join " "))))
 
 (defn- normalize-column
-  "Expand a column form into a fully normalized column map.
+  "Expand a column form into a fully-normalized column map.
 
-   Accepts these shapes, in order of terseness:
+   Accepted shapes, in order of terseness:
      :name                                     ;; bare keyword
      [:col :name]                              ;; explicit [:col k]
      [:col :name {:width 10 :align :right}]    ;; [:col k opts]
@@ -154,6 +206,13 @@
                               (range (count row)))
       :else             [])))
 
+(defn- merge-defaults
+  "Apply table-level :defaults to every column (column opts win)."
+  [columns defaults]
+  (if (seq defaults)
+    (mapv #(merge defaults %) columns)
+    columns))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Extraction and Value Formatting
@@ -165,24 +224,35 @@
   [row col]
   (let [k (:key col)]
     (cond
-      (fn? k)          (k row)
-      (map? row)       (get row k)
+      (fn? k)           (k row)
+      (map? row)        (get row k)
       (sequential? row) (when (number? k) (nth row k nil))
-      :else            nil)))
+      :else             nil)))
 
-(defn- format-value
-  "Format a value according to a column's format spec.
-   Used for width measurement and preprocessing."
-  [v col]
+(defn- format-fn
+  "Return a unary function that formats a value per the column's `:format`.
+
+   The returned function is closed over a once-compiled cl-format
+   string, so repeated invocations across rows do not re-compile the
+   DSL. The `:format` may be a keyword, a DSL vector, or a Clojure
+   function; in every case we return a `(fn [v] string)` closure."
+  [col]
   (let [fmt (:format col :str)]
     (cond
-      (nil? v)       ""
-      (fn? fmt)      (fmt v)
-      (= fmt :str)  (str v)
-      (= fmt :pr)   (pr-str v)
-      (keyword? fmt) (pp/cl-format nil (compiler/compile-format [fmt]) v)
-      (vector? fmt)  (pp/cl-format nil (compiler/compile-format fmt) v)
-      :else          (str v))))
+      (fn? fmt)        fmt
+      (= fmt :str)     str
+      (= fmt :pr)      pr-str
+      (keyword? fmt)   (let [fmt-str (compiler/compile-format [fmt])]
+                         #(pp/cl-format nil fmt-str %))
+      (vector? fmt)    (let [fmt-str (compiler/compile-format fmt)]
+                         #(pp/cl-format nil fmt-str %))
+      :else            str)))
+
+(defn- with-format-fns
+  "Attach a compiled `:format-fn` to every column. Called once per
+   table so format strings are compiled once per column, not per cell."
+  [columns]
+  (mapv #(assoc % :format-fn (format-fn %)) columns))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -191,26 +261,24 @@
 
 
 (defn- measure-width
-  "Measure the display width of a value for a column."
+  "Display width of a value for a column, using the column's format-fn."
   [v col nil-value]
   (if (nil? v)
     (count (str nil-value))
-    (count (format-value v col))))
+    (count ((:format-fn col) v))))
 
 (defn- compute-width
-  "Compute the auto-sized width for a single column."
+  "Auto-sized width for a single column."
   [col rows nil-value]
   (let [title-w  (count (:title col))
         data-ws  (map #(measure-width (extract-value % col) col nil-value) rows)
-        max-data (if (seq data-ws) (apply max data-ws) 0)
-        natural  (max title-w max-data)
-        min-w    (or (:min-width col) title-w)
-        max-w    (:max-width col)]
+        natural  (apply max title-w data-ws)
+        min-w    (or (:min-width col) title-w)]
     (cond-> (max natural min-w)
-      max-w (min max-w))))
+      (:max-width col) (min (:max-width col)))))
 
 (defn- compute-widths
-  "Assign widths to all columns, auto-sizing where not explicitly set."
+  "Assign widths to every column, auto-sizing where not explicitly set."
   [columns rows nil-value]
   (mapv (fn [col]
           (if (:width col)
@@ -225,7 +293,7 @@
 
 
 (defn- elide
-  "Truncate string s to width, appending ellipsis if truncated."
+  "Truncate `s` to `width`, appending `ellipsis` if truncation occurred."
   [s width ellipsis]
   (let [ell  (or ellipsis "...")
         elen (count ell)]
@@ -235,24 +303,20 @@
       :else                (str (subs s 0 (- width elen)) ell))))
 
 (defn- wrap-line
-  "Fit a single line of text within width.
+  "Fit a single line of text within `width`.
 
    If the line already fits, it is preserved verbatim — interior
    whitespace is not collapsed. This matters for pre-formatted
-   content like ASCII art banners and nested table renderings,
-   where every space is load-bearing.
+   content like ASCII art banners and nested tables, where every
+   space is load-bearing.
 
    If the line exceeds width, greedy word-wrap takes over: break at
-   word boundaries, splitting words longer than width at the width
+   word boundaries, splitting overlong single words at the width
    boundary."
   [s width]
   (cond
-    (empty? s)
-    [""]
-
-    (<= (count s) width)
-    [s]
-
+    (empty? s)           [""]
+    (<= (count s) width) [s]
     :else
     (let [words (str/split s #"\s+")]
       (loop [remaining words
@@ -279,9 +343,8 @@
 (defn- word-wrap
   "Split a string into lines that fit within width.
 
-   Preserves explicit newlines as hard breaks; wraps the text
-   between them at word boundaries. Long words are broken at the
-   width boundary. Returns a vector of line strings."
+   Preserves explicit newlines as hard breaks and wraps each
+   resulting segment with `wrap-line`."
   [s width]
   (cond
     (or (nil? s) (= "" s)) [""]
@@ -289,211 +352,9 @@
     :else                  (vec (mapcat #(wrap-line % width)
                                         (str/split s #"\n" -1)))))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Rendering Mode Resolution
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-(def ^:private +str-formats+
-  "Formats that produce strings and support elision."
-  #{:str :pr})
-
-(def ^:private +width-directives+
-  "Directives that accept a :width parameter."
-  #{:str :pr :int :bin :oct :hex :radix :float :exp :gfloat :money})
-
-(def ^:private +right-natural+
-  "Directives that naturally right-justify with :width."
-  #{:int :bin :oct :hex :radix :float :exp :gfloat :money})
-
-(defn- string-format?
-  "True if the column's format is string-based."
-  [col]
-  (let [fmt (:format col :str)]
-    (or (fn? fmt) (+str-formats+ fmt))))
-
-(defn- wrap-mode?
-  "True when any column uses :overflow :wrap.
-   In wrap mode, every column is preprocessed to strings so that
-   continuation rows (with empty values for non-wrap columns) can
-   be rendered uniformly with :str directives."
-  [columns]
-  (boolean (some #(= :wrap (:overflow %)) columns)))
-
-(defn- needs-preprocess?
-  "True if a column needs values preprocessed to strings."
-  [col rows]
-  (or (fn? (:format col))
-      (and (not (string-format? col))
-           (some #(nil? (extract-value % col)) rows))))
-
-(defn- resolve-modes
-  "Tag each column with :mode (:direct or :preprocessed).
-   Wrap mode forces every column to :preprocessed."
-  [columns rows]
-  (let [force? (wrap-mode? columns)]
-    (mapv (fn [col]
-            (assoc col :mode (if (or force? (needs-preprocess? col rows))
-                               :preprocessed
-                               :direct)))
-          columns)))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Cell Directive Construction
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-(defn- parse-format-spec
-  "Parse a column :format into [keyword opts-map children-seq].
-   Returns nil for function formats."
-  [fmt]
-  (cond
-    (keyword? fmt) [fmt {} nil]
-    (vector? fmt)  (let [[kw & body] fmt
-                         [opts children] (if (map? (first body))
-                                           [(first body) (rest body)]
-                                           [{} body])]
-                     [kw opts (seq children)])
-    :else          nil))
-
-(defn- build-justify
-  "Wrap a DSL element in a :justify directive for alignment."
-  [width align inner]
-  (let [opts (cond-> {:width width}
-               (= align :left)   (assoc :pad-after true)
-               (= align :center) (assoc :pad-before true :pad-after true))]
-    [:justify opts inner]))
-
-(defn- cell-directive
-  "Build the DSL directive for a data cell."
-  [{:keys [width align format case mode] :or {align :left format :str}}]
-  (if (= mode :preprocessed)
-    ;; Preprocessed: value is a string, use :str
-    (cond
-      (= align :left)   [:str (cond-> {:width width} case (assoc :case case))]
-      (= align :right)  [:str (cond-> {:width width :pad :left} case (assoc :case case))]
-      (= align :center) (build-justify width align
-                                       (if case [:str {:case case}] :str))
-      :else              [:str {:width width}])
-
-    ;; Direct mode: use typed directives
-    (let [parsed (parse-format-spec format)
-          [fmt-kw fmt-opts children] (or parsed [:str {} nil])
-          can-merge?     (and (+width-directives+ fmt-kw) (nil? children))
-          str-fmt?       (+str-formats+ fmt-kw)
-          right-natural? (+right-natural+ fmt-kw)
-          ;; Can we merge width directly for this alignment?
-          merge-align?   (or (and str-fmt? (#{:left :right} align))
-                             (and right-natural? (= align :right)))]
-      (if (and can-merge? merge-align?)
-        ;; Direct merge: width + alignment into directive opts
-        [fmt-kw (cond-> (merge fmt-opts {:width width})
-                  case                              (assoc :case case)
-                  (and str-fmt? (= align :right))   (assoc :pad :left))]
-        ;; Justify wrapper for non-natural alignment or compound formats
-        (let [inner (cond
-                      (and (nil? children) (empty? fmt-opts) (not case))
-                      fmt-kw
-
-                      (nil? children)
-                      [fmt-kw (cond-> fmt-opts case (assoc :case case))]
-
-                      :else
-                      (let [form (vec (concat [fmt-kw]
-                                              (when (seq fmt-opts) [fmt-opts])
-                                              children))]
-                        form))]
-          (build-justify width align inner))))))
-
-(defn- header-directive
-  "Build the DSL directive for a header cell."
-  [col header-case]
-  (let [{:keys [width align title-align]} col
-        align (or title-align align :left)
-        opts  (cond-> {:width width}
-                header-case (assoc :case header-case))]
-    (cond
-      (= align :left)   [:str opts]
-      (= align :right)  [:str (assoc opts :pad :left)]
-      (= align :center) (build-justify width align
-                                       (if header-case
-                                         [:str {:case header-case}]
-                                         :str))
-      :else              [:str opts])))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Row Assembly
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-(defn- row-elements
-  "Build the DSL elements for one row: borders + directives + newline."
-  [directives style]
-  (let [{:keys [v sep borderless]} style
-        bordered? (and (some? v) (not borderless))
-        cell-sep  (if bordered? (str " " v " ") (or sep "  "))]
-    (vec (concat
-           (when bordered? [(str v " ")])
-           (interpose cell-sep directives)
-           (when bordered? [(str " " v)])
-           [:nl]))))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Aggregation
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-(defn- aggregate
-  "Apply an aggregate function to a sequence of values."
-  [f values]
-  (let [nums (filter number? values)]
-    (case f
-      :sum   (reduce + 0 nums)
-      :avg   (if (seq nums) (/ (reduce + 0.0 nums) (count nums)) 0)
-      :min   (if (seq nums) (apply min nums) nil)
-      :max   (if (seq nums) (apply max nums) nil)
-      :count (count values)
-      (if (fn? f) (f values) nil))))
-
-(defn- compute-footer-values
-  "Compute footer values from data rows."
-  [columns rows footer-opts]
-  (let [{:keys [label values fns]} footer-opts]
-    (mapv (fn [i col]
-            (let [k (:key col)]
-              (cond
-                ;; First column gets the label
-                (and (zero? i) label (not (get values k)) (not (get fns k)))
-                label
-
-                ;; Explicit static value
-                (contains? values k)
-                (get values k)
-
-                ;; Aggregate function
-                (contains? fns k)
-                (aggregate (get fns k) (map #(extract-value % col) rows))
-
-                ;; First column label fallback
-                (and (zero? i) label)
-                label
-
-                :else "")))
-          (range) columns)))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Data Preparation
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
 (defn- apply-overflow
-  "Apply the column's overflow policy to a prepared string value.
-   :wrap is handled later during row expansion, so here it is a no-op."
+  "Apply the column's overflow policy to a prepared string.
+   `:wrap` is handled later during row expansion, so here it's a no-op."
   [s col]
   (let [width    (:width col)
         overflow (or (:overflow col) :ellipsis)]
@@ -503,22 +364,23 @@
         :ellipsis (elide s width (:ellipsis col)))
       s)))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Data Preparation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
 (defn- prepare-cell
-  "Prepare a single cell value for rendering."
+  "Preprocess a single value to its final string representation."
   [v col nil-value]
-  (let [v (if (nil? v) nil-value v)]
-    (if (= :preprocessed (:mode col))
-      (let [s (if (= v nil-value)
-                (str nil-value)
-                (format-value v col))]
-        (apply-overflow s col))
-      (if (and (string-format? col) (:width col) (string? v))
-        (apply-overflow v col)
-        v))))
+  (let [s (if (nil? v)
+            (str nil-value)
+            ((:format-fn col) v))]
+    (apply-overflow s col)))
 
 (defn- expand-wrapped-row
-  "Expand one logical row into physical rows when any column wraps.
-   Non-wrapping columns show their value only on the first physical row."
+  "Expand one prepared logical row into physical rows. Non-wrapping
+   columns show their value only on the first physical row."
   [row wrap-flags widths]
   (let [lines-per-cell (mapv (fn [cell wraps? w]
                                (if (and wraps? (string? cell))
@@ -529,15 +391,14 @@
     (vec (for [i (range line-count)]
            (mapv #(or (nth % i nil) "") lines-per-cell)))))
 
-(defn- prepare-data
-  "Extract and prepare all row data as sublists.
-   When any column wraps, expands logical rows into physical rows."
+(defn- prepare-rows
+  "Extract and preprocess all rows into physical row sublists."
   [rows columns nil-value]
   (let [prepared (mapv (fn [row]
                          (mapv #(prepare-cell (extract-value row %) % nil-value)
                                columns))
                        rows)]
-    (if (wrap-mode? columns)
+    (if (some #(= :wrap (:overflow %)) columns)
       (let [wrap-flags (mapv #(= :wrap (:overflow %)) columns)
             widths     (mapv :width columns)]
         (vec (mapcat #(expand-wrapped-row % wrap-flags widths) prepared)))
@@ -545,103 +406,190 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Table DSL Composition
+;; Directive Construction
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+(defn- str-directive
+  "Build a `:str` DSL directive from a base options map, for a given
+   alignment. Center uses `:justify` because `:str` has no center mode."
+  [width align extra-opts]
+  (let [opts (merge {:width width} extra-opts)]
+    (case align
+      :left   [:str opts]
+      :right  [:str (assoc opts :pad :left)]
+      :center [:justify {:width width :pad-before true :pad-after true}
+               (if (seq extra-opts) [:str extra-opts] :str)])))
+
+(defn- cell-directive
+  "DSL directive for a data cell. Values are already strings at this
+   point, so we only need to pad to column width with the requested
+   alignment and optional case conversion."
+  [{:keys [width align case] :or {align :left}}]
+  (str-directive width align (when case {:case case})))
+
+(defn- header-directive
+  "DSL directive for a header cell."
+  [col header-case]
+  (let [align     (or (:title-align col) (:align col) :left)
+        extras    (when header-case {:case header-case})]
+    (str-directive (:width col) align extras)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Row Assembly
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defn- row-elements
+  "Build DSL elements for one row: optional outer borders, cell
+   directives interleaved with column separators, and a trailing
+   newline."
+  [directives style]
+  (let [{:keys [v sep outer?]} style
+        cell-sep (if outer? (str " " v " ") (or sep "  "))]
+    (vec (concat
+           (when outer? [(str v " ")])
+           (interpose cell-sep directives)
+           (when outer? [(str " " v)])
+           [:nl]))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Footer Computation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defn- aggregate
+  "Apply an aggregate function to a sequence of raw column values.
+   Built-ins: :sum :avg :min :max :count. A function is called
+   directly on the value seq."
+  [f values]
+  (let [nums (filter number? values)]
+    (case f
+      :sum   (reduce + 0 nums)
+      :avg   (if (seq nums) (/ (reduce + 0.0 nums) (count nums)) 0)
+      :min   (when (seq nums) (apply min nums))
+      :max   (when (seq nums) (apply max nums))
+      :count (count values)
+      (when (fn? f) (f values)))))
+
+(defn- compute-footer-values
+  "Compute one row of raw footer values from columns + footer opts.
+   Precedence per column: explicit :values entry > :fns entry >
+   :label on the first column > empty."
+  [columns rows {:keys [label values fns]}]
+  (mapv (fn [i col]
+          (let [k (:key col)]
+            (cond
+              (contains? values k) (get values k)
+              (contains? fns k)    (aggregate (get fns k) (map #(extract-value % col) rows))
+              (zero? i)            (or label "")
+              :else                "")))
+        (range)
+        columns))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Sections
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; Each section returns {:dsl [...] :args [...]} or nil. The full table
+;; DSL is the concatenation of every non-nil section's contribution.
+
+(defn- column-widths [columns] (mapv :width columns))
+(defn- column-aligns [columns] (mapv #(or (:align %) :left) columns))
+
+(defn- top-rule-section
+  "The topmost border rule, when the style has one."
+  [columns style]
+  (when (:top? style)
+    {:dsl  [(rule-string style :top (column-widths columns) (column-aligns columns)) :nl]
+     :args []}))
+
+(defn- header-section
+  "The header row and the rule under it (if enabled)."
+  [columns style {:keys [header header-rule header-case]
+                  :or   {header true header-rule true header-case :capitalize}}]
+  (when header
+    (let [widths (column-widths columns)
+          aligns (column-aligns columns)]
+      {:dsl  (vec (concat
+                    (row-elements (mapv #(header-directive % header-case) columns) style)
+                    (when (and header-rule (:mid? style))
+                      [(rule-string style :mid widths aligns) :nl])))
+       :args (mapv :title columns)})))
+
+(defn- body-section
+  "The `:each {:from :sublists}` element that iterates prepared rows.
+   `:row-rules true` injects a mid rule between rows using `~:^` so
+   that the rule does not appear after the final row."
+  [columns prepared-rows style {:keys [row-rules] :or {row-rules false}}]
+  (let [widths    (column-widths columns)
+        aligns    (column-aligns columns)
+        wrapped?  (some #(= :wrap (:overflow %)) columns)
+        row-body  (row-elements (mapv cell-directive columns) style)
+        each-body (if (and row-rules (:mid? style) (not wrapped?))
+                    (into row-body
+                          [[:stop {:outer true}]
+                           (rule-string style :mid widths aligns)
+                           :nl])
+                    row-body)]
+    {:dsl  [(vec (into [:each {:from :sublists}] each-body))]
+     :args [prepared-rows]}))
+
+(defn- footer-section
+  "The footer row, preceded by a rule if the style has a mid rule and
+   the footer opts opt in via `:rule` (default true)."
+  [columns rows style {:keys [footer nil-value] :or {nil-value ""}}]
+  (when (map? footer)
+    (let [widths   (column-widths columns)
+          aligns   (column-aligns columns)
+          raw-vals (compute-footer-values columns rows footer)
+          prepared (mapv #(prepare-cell %1 %2 nil-value) raw-vals columns)
+          rule?    (and (:mid? style) (get footer :rule true))]
+      {:dsl  (vec (concat
+                    (when rule? [(rule-string style :mid widths aligns) :nl])
+                    (row-elements (mapv cell-directive columns) style)))
+       :args prepared})))
+
+(defn- bottom-rule-section
+  "The bottommost border rule, when the style has one."
+  [columns style]
+  (when (:bottom? style)
+    {:dsl  [(rule-string style :bottom (column-widths columns) (column-aligns columns))]
+     :args []}))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Composition
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defn- assemble
+  "Concatenate non-nil sections into a single {:dsl ... :args ...} map."
+  [sections]
+  (let [live (remove nil? sections)]
+    {:dsl  (vec (mapcat :dsl  live))
+     :args (vec (mapcat :args live))}))
+
 (defn- compose-table
-  "Compose the full table DSL and argument list.
-   Returns {:dsl body-vector :args argument-vector}."
+  "Compose the full table DSL and argument list for already-normalized
+   columns and raw row data. Returns {:dsl body-vector :args argv}."
   [columns rows opts]
-  (let [{:keys [style header header-rule header-case top-rule bottom-rule
-                row-rules footer nil-value]
-         :or   {header true header-rule true header-case :capitalize
-                top-rule true bottom-rule true row-rules false
-                nil-value ""}} opts
-        style       (resolve-style style)
-        columns     (compute-widths columns rows nil-value)
-        columns     (resolve-modes columns rows)
-        widths      (mapv :width columns)
-        borderless? (:borderless style)
-        no-rules?   (:no-rules style)
-        markdown?   (:markdown style)
-
-        ;; Build directives
-        data-dirs   (mapv cell-directive columns)
-        header-dirs (mapv #(header-directive % header-case) columns)
-
-        ;; Build row element patterns
-        data-row    (row-elements data-dirs style)
-        header-row  (row-elements header-dirs style)
-
-        ;; Build rule strings
-        top-rule-str    (when (and top-rule (not no-rules?) (not borderless?)
-                                  (not markdown?))
-                          (rule-string style :top widths))
-        header-rule-str (when (and header header-rule (not no-rules?))
-                          (if markdown?
-                            (markdown-rule-string widths (mapv #(or (:align %) :left) columns))
-                            (rule-string style :mid widths)))
-        bottom-rule-str (when (and bottom-rule (not no-rules?) (not borderless?)
-                                   (not markdown?))
-                          (rule-string style :bottom widths))
-
-        ;; Row separator elements for :row-rules.
-        ;; Uses [:stop {:outer true}] (~:^) to guard the separator,
-        ;; because ~^ only checks the current sublist's remaining args
-        ;; while ~:^ checks if more sublists remain in the outer list.
-        ;; Disabled in wrap mode: each physical row iteration cannot
-        ;; distinguish "last physical row of a logical group" from
-        ;; "middle of a group", so rules would appear between
-        ;; continuation rows of the same logical row.
-        row-sep-elems (when (and row-rules (not no-rules?)
-                                 (not (wrap-mode? columns)))
-                        [[:stop {:outer true}]
-                         (rule-string style :mid widths) :nl])
-
-        ;; Footer
-        footer-opts (when (and footer (map? footer))
-                      footer)
-        footer-vals (when footer-opts
-                      (compute-footer-values columns rows footer-opts))
-        footer-dirs (when footer-vals
-                      (mapv cell-directive columns))
-        footer-row  (when footer-dirs
-                      (row-elements footer-dirs style))
-        footer-rule-str (when (and footer-vals (not no-rules?)
-                                   (get footer-opts :rule true))
-                          (if borderless?
-                            (rule-string style :mid widths)
-                            (rule-string style :mid widths)))
-
-        ;; Prepare data
-        data        (prepare-data rows columns nil-value)
-        header-titles (mapv :title columns)
-
-        ;; Build :each element
-        each-opts   {:from :sublists}
-        each-body   (if row-sep-elems
-                      (concat data-row row-sep-elems)
-                      data-row)
-        each-elem   (vec (concat [:each each-opts] each-body))
-
-        ;; Compose full DSL body
-        dsl-parts   (concat
-                      (when top-rule-str    [top-rule-str :nl])
-                      (when header          header-row)
-                      (when header-rule-str [header-rule-str :nl])
-                      [each-elem]
-                      (when footer-rule-str [footer-rule-str :nl])
-                      (when footer-row      footer-row)
-                      (when bottom-rule-str [bottom-rule-str]))
-        dsl         (vec dsl-parts)
-
-        ;; Compose argument list
-        args        (vec (concat
-                           (when header header-titles)
-                           [data]
-                           (when footer-vals footer-vals)))]
-    {:dsl dsl :args args}))
+  (let [nil-value (get opts :nil-value "")
+        style     (resolve-style (:style opts))
+        columns   (-> columns
+                      with-format-fns
+                      (compute-widths rows nil-value))
+        prepared  (prepare-rows rows columns nil-value)]
+    (assemble
+      [(top-rule-section    columns style)
+       (header-section      columns style opts)
+       (body-section        columns prepared style opts)
+       (footer-section      columns rows style opts)
+       (bottom-rule-section columns style)])))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -650,8 +598,8 @@
 
 
 (defn- parse-table-spec
-  "Extract [opts columns] from a [:table opts? & cols] form.
-   Columns default to an empty vector (infer from data)."
+  "Extract [opts columns] from a [:table opts? & cols] form. Columns
+   default to an empty vector (meaning: infer from data)."
   [spec]
   (when-not (and (vector? spec) (= :table (first spec)))
     (throw (ex-info "Expected [:table ...] spec" {:spec spec})))
@@ -664,30 +612,22 @@
 (defn- resolve-columns
   "Produce normalized column maps from the spec body and rows."
   [col-forms rows defaults]
-  (let [cols (if (seq col-forms)
-               (mapv normalize-column col-forms)
-               (or (infer-columns rows)
-                   (throw (ex-info "Cannot infer columns from empty data"
-                                   {:reason :no-columns}))))]
-    (if (seq defaults)
-      (mapv #(merge defaults %) cols)
-      cols)))
+  (-> (if (seq col-forms)
+        (mapv normalize-column col-forms)
+        (or (infer-columns rows)
+            (throw (ex-info "Cannot infer columns from empty data"
+                            {:reason :no-columns}))))
+      (merge-defaults defaults)))
 
 (defn table-dsl
   "Build the table DSL and argument list without rendering.
 
-  Returns a map with :dsl (the clj-format DSL body vector) and :args
-  (the argument list). Useful for inspecting the generated DSL or
-  calling clj-format directly.
+  Returns a map with `:dsl` (the clj-format DSL body vector) and
+  `:args` (the argument list to feed clj-format). Useful for
+  inspecting the generated DSL or calling clj-format directly.
 
-  spec is a [:table opts? & cols] form matching the Hiccup convention:
-     [:table]                          ;; infer everything from rows
-     [:table :name :age]               ;; bare-keyword columns
-     [:table {:style :unicode}
-       [:col :name {:width 20}]
-       [:col :age  {:align :right}]]
-
-  rows is a seq of maps or vectors."
+  `spec` is a `[:table opts? & cols]` form matching the Hiccup
+  convention; `rows` is a seq of maps or vectors."
   [spec rows]
   (let [[opts col-forms] (parse-table-spec spec)
         columns          (resolve-columns col-forms rows (:defaults opts))]
@@ -697,8 +637,8 @@
   "Render a [:table ...] spec to a target. Internal entry point used
   by clj-format.core/clj-format.
 
-  target is the normalized output target: nil, true, or a Writer.
-  spec is a [:table ...] form. rows is the data sequence."
+  `target` is the normalized output target: nil, true, or a Writer.
+  `spec` is a [:table ...] form. `rows` is the data sequence."
   [target spec rows]
   (let [{:keys [dsl args]} (table-dsl spec rows)
         fmt-str            (compiler/compile-format dsl)]
