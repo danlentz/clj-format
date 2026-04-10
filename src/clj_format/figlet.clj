@@ -22,6 +22,19 @@
     [:figlet {:font \"small\"} \"Hello\"]     ;; explicit font
     [:figlet {:font \"slant\"} \"Line 1\" \"Line 2\"]   ;; multi-line
 
+  The :font option accepts every shape clj-figlet.core/render accepts:
+
+    :font \"standard\"                   ;; bundled font name
+    :font \"fonts/small.flf\"            ;; classpath resource
+    :font \"/abs/path/custom.flf\"       ;; filesystem path
+    :font (java.io.File. \"f.flf\")     ;; File object
+    :font my-preloaded-font             ;; font map from load-font
+
+  Layout (smushing/fitting/full), smushing rules, direction, and
+  character width are all determined by the font file itself —
+  clj-figlet has no render-time layout overrides. Pre-loading a font
+  with clj-figlet.core/load-font is the right way to customize.
+
   The body must be one or more literal strings; the :figlet form is
   expanded at preprocessing time, so runtime argument values cannot
   feed into it. Users who need runtime-derived banner text should
@@ -29,7 +42,8 @@
   normal string argument."
   (:require [clj-figlet.core  :as figlet]
             [clj-format.core  :as core]
-            [clojure.string   :as str]))
+            [clojure.string   :as str])
+  (:import (java.io File Reader)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -38,18 +52,32 @@
 
 
 (def ^:private render-cached
-  "Memoized renderer — keyed on [font-name text] so repeated banners
-   in a single format call (or across calls) skip the font load."
+  "Memoized renderer for stable font keys.
+
+   Only safe for values whose equality is cheap and that don't mutate
+   across calls: strings (font names and paths) and File objects.
+   Pre-loaded font maps skip the cache because the font I/O they would
+   amortize has already happened, and comparing large maps as cache
+   keys is wasteful. Readers skip the cache because they are stateful
+   and can only be consumed once."
   (memoize
-    (fn [font-name text]
-      (figlet/render font-name text))))
+    (fn [font-key text]
+      (figlet/render font-key text))))
+
+(defn- cacheable-font?
+  "True when a font source can safely be used as a memoize key."
+  [font]
+  (or (string? font)
+      (instance? File font)))
 
 (defn- render-figlet
   "Render body lines as a FIGlet banner using opts."
   [body opts]
   (let [font (or (:font opts) "standard")
         text (str/join "\n" body)]
-    (render-cached font text)))
+    (if (cacheable-font? font)
+      (render-cached font text)
+      (figlet/render font text))))
 
 (defn- figlet-form?
   "True if x is a [:figlet ...] DSL form."

@@ -7,7 +7,8 @@
   (:require [clojure.test    :refer [deftest is testing]]
             [clojure.string  :as str]
             [clj-format.core :as fmt]
-            [clj-format.figlet :as figlet]))
+            [clj-format.figlet :as figlet]
+            [clj-figlet.core :as cf]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -109,3 +110,29 @@
 (deftest preprocessor-installed-test
   (testing "Loading clj-format.figlet installs expand as the preprocessor"
     (is (= figlet/expand fmt/*dsl-preprocessor*))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; :font Value Types
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(deftest font-string-test
+  (testing ":font accepts a bundled font name string"
+    (let [result (figlet/expand [:figlet {:font "small"} "X"])]
+      (is (string? result))
+      (is (str/includes? result "\n")))))
+
+(deftest font-preloaded-map-test
+  (testing ":font accepts a pre-loaded font map from clj-figlet/load-font"
+    (let [font   (cf/load-font "fonts/small.flf")
+          via-map (figlet/expand [:figlet {:font font} "X"])
+          via-name (figlet/expand [:figlet {:font "small"} "X"])]
+      (is (= via-map via-name)
+          "pre-loaded map matches name-based render"))))
+
+(deftest font-classpath-path-test
+  (testing ":font accepts a classpath resource path string"
+    (let [result (figlet/expand [:figlet {:font "fonts/small.flf"} "X"])]
+      (is (string? result))
+      (is (not (str/blank? result))))))
