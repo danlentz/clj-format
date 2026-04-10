@@ -13,8 +13,7 @@
   (:require [clojure.test   :refer [deftest is testing]]
             [clojure.string :as str]
             [clj-http.client :as http]
-            [clj-format.core  :as fmt]
-            [clj-format.table :as table]))
+            [clj-format.core :as fmt]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -155,10 +154,11 @@
       (let [failures (atom 0)]
         (doseq [s strings]
           (try
-            (let [result (table/format-table
-                           [{:key :v :width 30 :overflow :ellipsis}]
-                           [{:v s}]
-                           {:header false})]
+            (let [result (fmt/clj-format
+                           nil
+                           [:table {:header false}
+                             [:col :v {:width 30 :overflow :ellipsis}]]
+                           [{:v s}])]
               (when-not (string? result)
                 (swap! failures inc)
                 (is false (str "non-string result for: "

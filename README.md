@@ -284,6 +284,89 @@ Applied as a `:case` option — no extra nesting:
 ;; => "xlii"
 ```
 
+## Tables
+
+Tables are a first-class DSL form: `[:table opts? & cols]`. They render
+through the same `clj-format` entry point, with the same writer semantics,
+as every other format call.
+
+```clojure
+(def products
+  [{:product "Widget"   :qty 1200  :price 9.99}
+   {:product "Gadget"   :qty 42    :price 24.50}
+   {:product "Sprocket" :qty 85000 :price 3.75}])
+
+(fmt/clj-format true
+  [:table {:style :unicode :header-case :upcase}
+    [:col :product {:width 15}]
+    [:col :qty     {:width 10 :align :right :format [:int {:group true}]}]
+    [:col :price   {:width 12 :align :right :format :money}]]
+  products)
+```
+```
+┌─────────────────┬────────────┬──────────────┐
+│ PRODUCT         │        QTY │        PRICE │
+├─────────────────┼────────────┼──────────────┤
+│ Widget          │      1,200 │         9.99 │
+│ Gadget          │         42 │        24.50 │
+│ Sprocket        │     85,000 │         3.75 │
+└─────────────────┴────────────┴──────────────┘
+```
+
+Terser forms are also supported — bare keyword columns and full inference:
+
+```clojure
+;; Bare-keyword columns
+(fmt/clj-format true [:table :name :age :role] staff)
+
+;; Infer columns from the first row
+(fmt/clj-format true [:table {:style :rounded}] staff)
+```
+
+Column formats accept any DSL directive — `:int`, `:money`, `:roman`,
+`[:int {:group true :sign :always}]`, `[:if "Yes" "No"]`, or a custom
+`(fn [v] string)`.
+
+Nine border styles: `:ascii`, `:unicode`, `:rounded`, `:heavy`, `:double`,
+`:markdown`, `:org`, `:simple`, `:none`.
+
+Features include per-column alignment, auto-sizing, text elision, word
+wrapping (`:overflow :wrap`), footer rows with aggregation (`:sum`,
+`:avg`, `:min`, `:max`, `:count`), computed columns, header case
+conversion, row rules, and nil-value display.
+
+See the [table tutorial](doc/table.md) for graduated, worked examples.
+
+## FIGlet Banners
+
+The optional `:figlet` directive produces ASCII-art banners via
+[clj-figlet](https://github.com/danlentz/clj-figlet). It is packaged as
+an extension: add `[com.github.danlentz/clj-figlet "0.1.4"]` to your
+project and require `clj-format.figlet` once at startup to enable it.
+
+```clojure
+(require 'clj-format.figlet)
+
+(fmt/clj-format true
+  [[:figlet {:font "small"} "WELCOME"] :nl
+   "Enter your name: " :str :nl]
+  "Alice")
+```
+```
+__      _____ _    ___ ___  __  __ ___
+\ \    / / __| |  / __/ _ \|  \/  | __|
+ \ \/\/ /| _|| |_| (_| (_) | |\/| | _|
+  \_/\_/ |___|____\___\___/|_|  |_|___|
+
+Enter your name: Alice
+```
+
+The body must be literal strings; the form is expanded at preprocessing
+time. Requiring `clj-format.figlet` installs an expander into
+`clj-format.core/*dsl-preprocessor*`. Projects that don't need figlet
+simply omit both the dependency and the require — the directive is
+inert until enabled.
+
 ## API
 
 The public API is available from `clj-format.core`. The lower-level
@@ -312,13 +395,21 @@ Writer details are host-specific:
 
 **`fmt`** — format specification:
 - **string** — passed directly to `cl-format` (full backward compatibility)
-- **vector** — compiled from DSL to a format string, then passed to `cl-format`
+- **vector** — compiled from the DSL to a format string, then passed to `cl-format`
 - **keyword** — shorthand for a single bare directive (e.g., `:str` for `~A`)
+- **`[:table ...]` vector** — rendered via the table facility
+- **extension forms** (e.g. `[:figlet ...]`) — preprocessed by any
+  extension registered in `*dsl-preprocessor*`
 
 ```clojure
 (fmt/clj-format nil "~D item~:P" 5)                            ;; => "5 items"
 (fmt/clj-format nil [:int " item" [:plural {:rewind true}]] 5) ;; => "5 items"
 (fmt/clj-format nil :cardinal 42)                               ;; => "forty-two"
+
+(fmt/clj-format nil [:table :name :age]
+                [{:name "Alice" :age 30} {:name "Bob" :age 25}])
+
+(fmt/clj-format true [:figlet {:font "small"} "HI"])            ;; requires clj-format.figlet
 ```
 
 ### `clj-format.core/parse-format`
@@ -371,6 +462,30 @@ any valid format string.
 When `compile-format` rejects an invalid DSL form it throws
 `ExceptionInfo` with structured `ex-data` describing the compile-phase
 error.
+
+### `clj-format.core/table-dsl`
+
+```clojure
+(fmt/table-dsl spec rows)
+```
+
+Build the table DSL and argument list without rendering. Returns a map
+`{:dsl [...] :args [...]}`. Useful for inspecting the generated DSL
+expression or calling `clj-format` directly with it.
+
+```clojure
+(fmt/table-dsl [:table :name :age] [{:name "Alice" :age 30}])
+;; => {:dsl  ["+-----+...\n..." ...]
+;;     :args ["Name" "Age" [["Alice" 30]]]}
+```
+
+### `clj-format.core/*dsl-preprocessor*`
+
+A dynamic var holding a function applied to every DSL vector before
+compilation. Defaults to `identity`. Extension namespaces (currently
+`clj-format.figlet`) install transformers here to expand custom
+directives. See [doc/extensions.md](doc/extensions.md) if you want to
+add your own.
 
 ## Development
 

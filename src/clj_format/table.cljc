@@ -1,20 +1,25 @@
 (ns clj-format.table
   "Tabular formatting facility built on the clj-format DSL.
 
-  Constructs clj-format DSL expressions from declarative table
-  specifications and renders them via a single clj-format call.
+  Table specifications follow the Hiccup convention used throughout
+  clj-format. A table is expressed as `[:table opts? & cols]`, which
+  clj-format.core/clj-format dispatches automatically:
 
-  Examples:
-    (print-table [{:name \"Alice\" :age 30} {:name \"Bob\" :age 25}])
+    (clj-format nil [:table] rows)
+    (clj-format nil [:table :name :age] rows)
+    (clj-format nil
+      [:table {:style :unicode :header-case :upcase}
+        [:col :product {:width 15}]
+        [:col :qty  {:align :right :format [:int {:group true}]}]]
+      products)
 
-    (format-table
-      [{:key :name :width 20}
-       {:key :qty  :align :right :format [:int {:group true}]}
-       {:key :price :align :right :format :money}]
-      data
-      {:style :unicode :header-case :upcase})"
-  (:require [clojure.string        :as str]
-            [clj-format.core       :as fmt]))
+  This namespace exposes two low-level entry points:
+    - table-dsl — build the DSL body + argument list for inspection
+    - render-to — internal dispatch target used by clj-format"
+  (:require [clojure.string           :as str]
+            #?(:clj  [clojure.pprint :as pp]
+               :cljs [cljs.pprint    :as pp])
+            [clj-format.compiler     :as compiler]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -101,17 +106,43 @@
 
 (defn- humanize-key
   "Convert a keyword to a human-readable title.
-   :created-at => \"Created At\", :name => \"Name\"."
+   :created-at => \"Created At\", :name => \"Name\".
+   Returns nil for non-keyword keys (computed columns)."
   [k]
-  (->> (str/split (name k) #"[-_]")
-       (map str/capitalize)
-       (str/join " ")))
+  (when (keyword? k)
+    (->> (str/split (name k) #"[-_]")
+         (map str/capitalize)
+         (str/join " "))))
 
 (defn- normalize-column
-  "Expand a column specification to a full column map."
+  "Expand a column form into a fully normalized column map.
+
+   Accepts these shapes, in order of terseness:
+     :name                                     ;; bare keyword
+     [:col :name]                              ;; explicit [:col k]
+     [:col :name {:width 10 :align :right}]    ;; [:col k opts]
+     [:col (fn [row] ...) {:title \"Name\"}]   ;; computed column
+     {:key :name :width 10}                    ;; raw map (advanced)"
   [col]
-  (let [col (if (keyword? col) {:key col} col)]
-    (assoc col :title (or (:title col) (humanize-key (:key col))))))
+  (let [base (cond
+               (keyword? col)
+               {:key col}
+
+               (and (vector? col) (= :col (first col)))
+               (let [[_ k opts] col]
+                 (when-not (or (keyword? k) (fn? k))
+                   (throw (ex-info "Column key must be a keyword or fn"
+                                   {:column col})))
+                 (merge (or opts {}) {:key k}))
+
+               (map? col)
+               col
+
+               :else
+               (throw (ex-info "Invalid column spec" {:column col})))]
+    (assoc base :title (or (:title base)
+                           (humanize-key (:key base))
+                           "Column"))))
 
 (defn- infer-columns
   "Infer column specifications from the first row of data."
@@ -149,8 +180,8 @@
       (fn? fmt)      (fmt v)
       (= fmt :str)  (str v)
       (= fmt :pr)   (pr-str v)
-      (keyword? fmt) (fmt/clj-format nil fmt v)
-      (vector? fmt)  (fmt/clj-format nil fmt v)
+      (keyword? fmt) (pp/cl-format nil (compiler/compile-format [fmt]) v)
+      (vector? fmt)  (pp/cl-format nil (compiler/compile-format fmt) v)
       :else          (str v))))
 
 
@@ -203,6 +234,47 @@
       (<= width elen)      (subs s 0 width)
       :else                (str (subs s 0 (- width elen)) ell))))
 
+(defn- wrap-line
+  "Greedily word-wrap a single line of text to fit within width.
+   Breaks at word boundaries; splits words longer than width."
+  [s width]
+  (if (empty? s)
+    [""]
+    (let [words (str/split s #"\s+")]
+      (loop [remaining words
+             line      ""
+             lines     []]
+        (if (empty? remaining)
+          (if (empty? line) lines (conj lines line))
+          (let [word      (first remaining)
+                candidate (if (empty? line) word (str line " " word))]
+            (cond
+              (<= (count candidate) width)
+              (recur (rest remaining) candidate lines)
+
+              (empty? line)
+              (if (<= (count word) width)
+                (recur (rest remaining) word lines)
+                (recur (cons (subs word width) (rest remaining))
+                       ""
+                       (conj lines (subs word 0 width))))
+
+              :else
+              (recur remaining "" (conj lines line)))))))))
+
+(defn- word-wrap
+  "Split a string into lines that fit within width.
+
+   Preserves explicit newlines as hard breaks; wraps the text
+   between them at word boundaries. Long words are broken at the
+   width boundary. Returns a vector of line strings."
+  [s width]
+  (cond
+    (or (nil? s) (= "" s)) [""]
+    (<= width 0)           [s]
+    :else                  (vec (mapcat #(wrap-line % width)
+                                        (str/split s #"\n" -1)))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rendering Mode Resolution
@@ -227,6 +299,14 @@
   (let [fmt (:format col :str)]
     (or (fn? fmt) (+str-formats+ fmt))))
 
+(defn- wrap-mode?
+  "True when any column uses :overflow :wrap.
+   In wrap mode, every column is preprocessed to strings so that
+   continuation rows (with empty values for non-wrap columns) can
+   be rendered uniformly with :str directives."
+  [columns]
+  (boolean (some #(= :wrap (:overflow %)) columns)))
+
 (defn- needs-preprocess?
   "True if a column needs values preprocessed to strings."
   [col rows]
@@ -235,13 +315,15 @@
            (some #(nil? (extract-value % col)) rows))))
 
 (defn- resolve-modes
-  "Tag each column with :mode (:direct or :preprocessed)."
+  "Tag each column with :mode (:direct or :preprocessed).
+   Wrap mode forces every column to :preprocessed."
   [columns rows]
-  (mapv (fn [col]
-          (assoc col :mode (if (needs-preprocess? col rows)
-                             :preprocessed
-                             :direct)))
-        columns))
+  (let [force? (wrap-mode? columns)]
+    (mapv (fn [col]
+            (assoc col :mode (if (or force? (needs-preprocess? col rows))
+                               :preprocessed
+                               :direct)))
+          columns)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -395,40 +477,57 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+(defn- apply-overflow
+  "Apply the column's overflow policy to a prepared string value.
+   :wrap is handled later during row expansion, so here it is a no-op."
+  [s col]
+  (let [width    (:width col)
+        overflow (or (:overflow col) :ellipsis)]
+    (if (and width (> (count s) width) (not= :wrap overflow))
+      (case overflow
+        :clip     (subs s 0 width)
+        :ellipsis (elide s width (:ellipsis col)))
+      s)))
+
 (defn- prepare-cell
   "Prepare a single cell value for rendering."
   [v col nil-value]
   (let [v (if (nil? v) nil-value v)]
     (if (= :preprocessed (:mode col))
-      ;; Pre-format to string
       (let [s (if (= v nil-value)
                 (str nil-value)
                 (format-value v col))]
-        ;; Apply elision
-        (if (and (:width col) (> (count s) (:width col))
-                 (not= :clip (:overflow col)))
-          (elide s (:width col) (:ellipsis col))
-          (if (and (:width col) (> (count s) (:width col))
-                   (= :clip (:overflow col)))
-            (subs s 0 (:width col))
-            s)))
-      ;; Direct mode
-      (if (and (string-format? col) (:width col) (string? v)
-               (> (count (str v)) (:width col)))
-        (let [s (str v)
-              overflow (or (:overflow col) :ellipsis)]
-          (case overflow
-            :ellipsis (elide s (:width col) (:ellipsis col))
-            :clip     (subs s 0 (:width col))
-            s))
+        (apply-overflow s col))
+      (if (and (string-format? col) (:width col) (string? v))
+        (apply-overflow v col)
         v))))
 
+(defn- expand-wrapped-row
+  "Expand one logical row into physical rows when any column wraps.
+   Non-wrapping columns show their value only on the first physical row."
+  [row wrap-flags widths]
+  (let [lines-per-cell (mapv (fn [cell wraps? w]
+                               (if (and wraps? (string? cell))
+                                 (word-wrap cell w)
+                                 [cell]))
+                             row wrap-flags widths)
+        line-count     (apply max 1 (map count lines-per-cell))]
+    (vec (for [i (range line-count)]
+           (mapv #(or (nth % i nil) "") lines-per-cell)))))
+
 (defn- prepare-data
-  "Extract and prepare all row data as sublists."
+  "Extract and prepare all row data as sublists.
+   When any column wraps, expands logical rows into physical rows."
   [rows columns nil-value]
-  (mapv (fn [row]
-          (mapv #(prepare-cell (extract-value row %) % nil-value) columns))
-        rows))
+  (let [prepared (mapv (fn [row]
+                         (mapv #(prepare-cell (extract-value row %) % nil-value)
+                               columns))
+                       rows)]
+    (if (wrap-mode? columns)
+      (let [wrap-flags (mapv #(= :wrap (:overflow %)) columns)
+            widths     (mapv :width columns)]
+        (vec (mapcat #(expand-wrapped-row % wrap-flags widths) prepared)))
+      prepared)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -473,11 +572,16 @@
                                    (not markdown?))
                           (rule-string style :bottom widths))
 
-        ;; Row separator elements for :row-rules
+        ;; Row separator elements for :row-rules.
         ;; Uses [:stop {:outer true}] (~:^) to guard the separator,
         ;; because ~^ only checks the current sublist's remaining args
         ;; while ~:^ checks if more sublists remain in the outer list.
-        row-sep-elems (when (and row-rules (not no-rules?))
+        ;; Disabled in wrap mode: each physical row iteration cannot
+        ;; distinguish "last physical row of a logical group" from
+        ;; "middle of a group", so rules would appear between
+        ;; continuation rows of the same logical row.
+        row-sep-elems (when (and row-rules (not no-rules?)
+                                 (not (wrap-mode? columns)))
                         [[:stop {:outer true}]
                          (rule-string style :mid widths) :nl])
 
@@ -531,36 +635,26 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defn- column-spec?
-  "True if x looks like a column specification."
-  [x]
-  (or (keyword? x) (and (map? x) (contains? x :key))))
+(defn- parse-table-spec
+  "Extract [opts columns] from a [:table opts? & cols] form.
+   Columns default to an empty vector (infer from data)."
+  [spec]
+  (when-not (and (vector? spec) (= :table (first spec)))
+    (throw (ex-info "Expected [:table ...] spec" {:spec spec})))
+  (let [[_ & body] spec
+        [opts cols] (if (and (seq body) (map? (first body)))
+                      [(first body) (rest body)]
+                      [{} body])]
+    [opts (vec cols)]))
 
-(defn- columns-vector?
-  "True if x is a vector of column specifications."
-  [x]
-  (and (vector? x) (seq x) (every? column-spec? x)))
-
-(defn- dispatch-args
-  "Parse variadic arguments into [columns rows opts]."
-  [args]
-  (case (count args)
-    1 [nil (first args) {}]
-    2 (let [[a b] args]
-        (if (and (columns-vector? a) (sequential? b))
-          [a b {}]
-          [nil a (if (map? b) b {})]))
-    3 (let [[a b c] args]
-        [a b (or c {})])
-    (throw (ex-info "Expected 1-3 arguments" {:count (count args)}))))
-
-(defn- normalize-columns
-  "Normalize columns, inferring from data if not provided."
-  [columns rows defaults]
-  (let [cols (if columns
-               (mapv normalize-column columns)
+(defn- resolve-columns
+  "Produce normalized column maps from the spec body and rows."
+  [col-forms rows defaults]
+  (let [cols (if (seq col-forms)
+               (mapv normalize-column col-forms)
                (or (infer-columns rows)
-                   (throw (ex-info "Cannot infer columns from empty data" {}))))]
+                   (throw (ex-info "Cannot infer columns from empty data"
+                                   {:reason :no-columns}))))]
     (if (seq defaults)
       (mapv #(merge defaults %) cols)
       cols)))
@@ -568,80 +662,30 @@
 (defn table-dsl
   "Build the table DSL and argument list without rendering.
 
-  Returns a map with :dsl (the DSL body vector) and :args (the
-  argument list). Useful for inspecting the generated DSL or for
+  Returns a map with :dsl (the clj-format DSL body vector) and :args
+  (the argument list). Useful for inspecting the generated DSL or
   calling clj-format directly.
 
-  Arities match format-table:
-    (table-dsl rows)
-    (table-dsl rows opts)
-    (table-dsl columns rows)
-    (table-dsl columns rows opts)"
-  [& args]
-  (let [[columns rows opts] (dispatch-args args)
-        defaults (:defaults opts)
-        columns  (normalize-columns columns rows defaults)]
+  spec is a [:table opts? & cols] form matching the Hiccup convention:
+     [:table]                          ;; infer everything from rows
+     [:table :name :age]               ;; bare-keyword columns
+     [:table {:style :unicode}
+       [:col :name {:width 20}]
+       [:col :age  {:align :right}]]
+
+  rows is a seq of maps or vectors."
+  [spec rows]
+  (let [[opts col-forms] (parse-table-spec spec)
+        columns          (resolve-columns col-forms rows (:defaults opts))]
     (compose-table columns rows opts)))
 
-(defn format-table
-  "Format data as a table. Returns a string.
+(defn render-to
+  "Render a [:table ...] spec to a target. Internal entry point used
+  by clj-format.core/clj-format.
 
-  rows can be a seq of maps or a seq of vectors/seqs.
-  columns (optional) is a vector of keywords or column-spec maps.
-  opts (optional) is a map of table-level options.
-
-  Arities:
-    (format-table rows)
-    (format-table rows opts)
-    (format-table columns rows)
-    (format-table columns rows opts)
-
-  Table options:
-    :style        Border style (:ascii :unicode :rounded :heavy
-                  :double :markdown :org :simple :none) or a custom map.
-    :header       Show header row (default true).
-    :header-rule  Show rule under header (default true).
-    :header-case  Case for headers (:capitalize :upcase :downcase
-                  :titlecase nil). Default :capitalize.
-    :top-rule     Show top border (default true).
-    :bottom-rule  Show bottom border (default true).
-    :row-rules    Show rules between rows (default false).
-    :nil-value    Display for nil values (default \"\").
-    :footer       Footer config map with :label, :values, :fns.
-    :defaults     Default options applied to all columns.
-
-  Column options:
-    :key          Map key or (fn [row] value) for computed columns.
-    :title        Header text (default: humanized key).
-    :width        Fixed column width (nil = auto-size).
-    :min-width    Minimum width for auto-sizing.
-    :max-width    Maximum width for auto-sizing.
-    :align        Cell alignment (:left :right :center).
-    :title-align  Header alignment (defaults to :align).
-    :format       DSL directive keyword, vector, or (fn [v] string).
-    :overflow     :ellipsis (default), :clip.
-    :ellipsis     Ellipsis string (default \"...\").
-    :case         Case conversion for cell values.
-
-  Examples:
-    (format-table [{:name \"Alice\" :age 30}])
-
-    (format-table
-      [{:key :name :width 20}
-       {:key :qty :align :right :format [:int {:group true}]}]
-      data
-      {:style :unicode})"
-  [& args]
-  (let [{:keys [dsl args]} (apply table-dsl args)]
-    (apply fmt/clj-format nil dsl args)))
-
-(defn print-table
-  "Format data as a table and print to *out*.
-
-  Accepts the same arguments as format-table.
-
-  Examples:
-    (print-table [{:name \"Alice\" :age 30}])
-    (print-table [:name :age] data {:style :unicode})"
-  [& args]
-  (println (apply format-table args)))
+  target is the normalized output target: nil, true, or a Writer.
+  spec is a [:table ...] form. rows is the data sequence."
+  [target spec rows]
+  (let [{:keys [dsl args]} (table-dsl spec rows)
+        fmt-str            (compiler/compile-format dsl)]
+    (apply pp/cl-format target fmt-str args)))

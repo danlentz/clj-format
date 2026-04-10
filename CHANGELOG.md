@@ -8,9 +8,14 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 ## [0.1.2-SNAPSHOT]
 
 ### Added
-- **Table formatting facility** (`clj-format.table`): Declarative tabular
-  output built entirely on the clj-format DSL. Constructs a single DSL
-  expression per table and renders it in one `clj-format` call.
+- **Tables as a first-class DSL form** (`[:table opts? & cols]`): The
+  `clj-format` entry point now dispatches table specs through the new
+  `clj-format.table` facility, matching the Hiccup convention used
+  throughout the library. Writer semantics (`nil`/`false`, `true`, or a
+  Writer) are unchanged — there is no separate `format-table` or
+  `print-table` function.
+  - Bare-keyword columns (`:name`), explicit `[:col :name {...}]` forms,
+    and raw column maps all accepted.
   - Nine border styles: `:ascii`, `:unicode`, `:rounded`, `:heavy`,
     `:double`, `:markdown`, `:org`, `:simple`, `:none`, plus custom maps.
   - Per-column alignment (`:left`, `:right`, `:center`), auto-sizing,
@@ -18,14 +23,29 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
   - Cell formatting via any DSL directive: `:int`, `:money`, `:roman`,
     `[:int {:group true}]`, `[:if "Yes" "No"]`, `[:money {:sign :always}]`,
     or custom `(fn [v] string)`.
-  - Text overflow handling: ellipsis truncation (`"..."`) and clip mode.
+  - Text overflow handling: `:ellipsis` truncation, `:clip`, and
+    `:wrap` word-wrapping. Wrap mode expands one logical row into
+    multiple physical rows with other columns shown only on the first
+    line.
   - Footer rows with built-in aggregates (`:sum`, `:avg`, `:min`, `:max`,
     `:count`) or custom aggregate functions.
-  - Computed columns via `:key (fn [row] value)`.
+  - Computed columns via `[:col (fn [row] ...) {...}]`.
   - Header case conversion, header suppression, row rules, nil-value
     display, and per-column title overrides.
-  - `table-dsl` function exposes the generated DSL for inspection and reuse.
-  - `doc/table.md` tutorial with 18+ rendered examples.
+  - `clj-format.core/table-dsl` exposes the generated DSL + argument
+    list for inspection and reuse.
+  - `doc/table.md` tutorial with graduated, worked examples for every
+    feature.
+- **Optional `:figlet` directive** via `clj-format.figlet` — renders
+  FIGlet ASCII-art banners using
+  [clj-figlet](https://github.com/danlentz/clj-figlet). Requiring the
+  namespace installs an expander into the new
+  `clj-format.core/*dsl-preprocessor*` hook; the directive is inert
+  for projects that don't opt in. `clj-figlet` is declared with
+  `:scope "provided"` so it is not pulled transitively.
+- **Extension hook**: `clj-format.core/*dsl-preprocessor*` — a dynamic
+  var that extension namespaces can rebind to transform DSL forms
+  before compilation. Defaults to `identity`.
 - Clause-local `~;` support for `:justify` and `:logical-block` via
   `[:clause opts & body]`, allowing the DSL to preserve and compile
   separator-local parameters and flags such as `~0,20:;`.

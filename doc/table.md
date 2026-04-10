@@ -1,21 +1,36 @@
-# clj-format.table Tutorial
+# Table Formatting Tutorial
 
-A tabular formatting facility built on the clj-format DSL. It constructs
-DSL expressions from declarative table specifications and renders entire
-tables via a single `clj-format` call.
+Tables in clj-format are a first-class DSL form. A table specification
+follows the Hiccup convention used throughout the library:
+
+```clojure
+[:table opts? & cols]
+```
+
+Tables render through the same `clj-format` entry point, with the same
+writer semantics, as every other format call. There is no separate
+`format-table` or `print-table` function — the one unified API handles
+everything.
+
+```clojure
+(require '[clj-format.core :as fmt])
+
+(fmt/clj-format nil  [:table :name :age] rows)  ;; return a string
+(fmt/clj-format true [:table :name :age] rows)  ;; print to *out*
+(fmt/clj-format sw   [:table :name :age] rows)  ;; write to a Writer
+```
 
 ## Quick Start
 
-```clojure
-(require '[clj-format.table :refer [print-table format-table table-dsl]])
-```
-
-The simplest call — just pass a seq of maps:
+The simplest spec — just the directive and a seq of maps:
 
 ```clojure
-(print-table [{:name "Alice" :age 30 :role "Admin"}
-              {:name "Bob"   :age 25 :role "User"}
-              {:name "Carol" :age 35 :role "Editor"}])
+(def staff
+  [{:name "Alice" :age 30 :role "Admin"}
+   {:name "Bob"   :age 25 :role "User"}
+   {:name "Carol" :age 35 :role "Editor"}])
+
+(fmt/clj-format true [:table] staff)
 ```
 ```
 +-------+-----+--------+
@@ -27,66 +42,77 @@ The simplest call — just pass a seq of maps:
 +-------+-----+--------+
 ```
 
-Columns are inferred from map keys. Widths auto-size to fit the data.
+Columns are inferred from the first row's map keys. Widths auto-size.
 Headers are humanized from keywords: `:first-name` becomes `"First Name"`.
 
 ## Selecting Columns
 
-Pass a vector of keywords to choose which columns to show and in what order:
+Bare keywords inside `[:table ...]` are columns:
 
 ```clojure
-(print-table [:name :role]
-  [{:name "Alice" :age 30 :role "Admin"}
-   {:name "Bob"   :age 25 :role "User"}])
+(fmt/clj-format true [:table :name :role] staff)
 ```
 ```
-+-------+-------+
-| Name  | Role  |
-+-------+-------+
-| Alice | Admin |
-| Bob   | User  |
-+-------+-------+
++-------+--------+
+| Name  | Role   |
++-------+--------+
+| Alice | Admin  |
+| Bob   | User   |
+| Carol | Editor |
++-------+--------+
 ```
 
-## Column Specifications
-
-For full control, pass column-spec maps instead of bare keywords:
+`[:col :name]` is an equivalent, fully explicit form. Use it when a
+column needs options:
 
 ```clojure
-(print-table
-  [{:key :product :width 15 :title "Product"}
-   {:key :qty     :width 10 :align :right :format [:int {:group true}] :title "Quantity"}
-   {:key :price   :width 12 :align :right :format :money :title "Unit Price"}]
-  [{:product "Widget"   :qty 1200  :price 9.99}
-   {:product "Gadget"   :qty 42    :price 24.50}
-   {:product "Sprocket" :qty 85000 :price 3.75}])
-```
-```
-+-----------------+------------+--------------+
-| Product         |   Quantity |   Unit Price |
-+-----------------+------------+--------------+
-| Widget          |      1,200 |         9.99 |
-| Gadget          |         42 |        24.50 |
-| Sprocket        |     85,000 |         3.75 |
-+-----------------+------------+--------------+
+(fmt/clj-format true
+  [:table
+    [:col :name {:width 20}]
+    [:col :role {:width 12 :align :right}]]
+  staff)
 ```
 
-Column options:
+## Column Options
+
+Column specs are either `:name` (bare keyword) or `[:col :name opts]`
+(Hiccup with options). Options:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `:key` | keyword/fn | (required) | Map key to extract, or `(fn [row] value)` |
 | `:title` | string | (humanized key) | Header text |
 | `:width` | integer | (auto) | Fixed column width |
 | `:min-width` | integer | (title length) | Minimum auto-sized width |
 | `:max-width` | integer | nil | Maximum auto-sized width |
 | `:align` | keyword | `:left` | `:left`, `:right`, or `:center` |
 | `:title-align` | keyword | (from `:align`) | Header alignment |
-| `:format` | keyword/vector/fn | `:str` | Cell format (see DSL Formats) |
-| `:overflow` | keyword | `:ellipsis` | `:ellipsis` or `:clip` |
+| `:format` | keyword/vector/fn | `:str` | Cell format (see DSL Formats below) |
+| `:overflow` | keyword | `:ellipsis` | `:ellipsis`, `:clip`, or `:wrap` |
 | `:ellipsis` | string | `"..."` | Ellipsis marker |
 | `:case` | keyword | nil | Case conversion for values |
 
+## Table Options
+
+Table-level options go in the second position (the opts map in the
+Hiccup form):
+
+```clojure
+[:table {:style :unicode :header-case :upcase}
+  :name :age :role]
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:style` | keyword/map | `:ascii` | Border style |
+| `:header` | boolean | `true` | Show header row |
+| `:header-rule` | boolean | `true` | Rule under header |
+| `:header-case` | keyword | `:capitalize` | Header case conversion |
+| `:top-rule` | boolean | `true` | Top border |
+| `:bottom-rule` | boolean | `true` | Bottom border |
+| `:row-rules` | boolean | `false` | Rules between data rows |
+| `:nil-value` | string | `""` | Display for nil values |
+| `:footer` | map | nil | Footer config (see Footer below) |
+| `:defaults` | map | `{}` | Default options applied to all columns |
 
 ## Border Styles
 
@@ -95,21 +121,26 @@ Nine built-in styles, selected with `:style`:
 ### `:ascii` (default)
 
 ```clojure
-(print-table [:name :score] data)
+(fmt/clj-format true [:table :name :score] scores)
 ```
 ```
 +-------+-------+
 | Name  | Score |
 +-------+-------+
 | Alice |    95 |
+| Bob   |    82 |
 +-------+-------+
 ```
 
 ### `:unicode`
 
 ```clojure
-(print-table [:name :dept :salary] employees
-  {:style :unicode :header-case :upcase})
+(fmt/clj-format true
+  [:table {:style :unicode :header-case :upcase}
+    [:col :name {:width 12}]
+    [:col :dept {:width 10}]
+    [:col :salary {:width 10 :align :right :format [:int {:group true}]}]]
+  employees)
 ```
 ```
 ┌──────────────┬────────────┬────────────┐
@@ -124,7 +155,7 @@ Nine built-in styles, selected with `:style`:
 ### `:rounded`
 
 ```clojure
-(print-table [:name :score] data {:style :rounded})
+(fmt/clj-format true [:table {:style :rounded} :name :score] scores)
 ```
 ```
 ╭──────────┬──────────╮
@@ -137,11 +168,12 @@ Nine built-in styles, selected with `:style`:
 ### `:heavy`
 
 ```clojure
-(print-table [{:key :city :width 12}
-              {:key :pop  :width 12 :align :right
-               :format [:int {:group true}] :title "Population"}]
-  cities
-  {:style :heavy :header-case :upcase})
+(fmt/clj-format true
+  [:table {:style :heavy :header-case :upcase}
+    [:col :city {:width 12}]
+    [:col :pop  {:width 12 :align :right
+                 :format [:int {:group true}] :title "Population"}]]
+  cities)
 ```
 ```
 ┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
@@ -156,10 +188,11 @@ Nine built-in styles, selected with `:style`:
 ### `:double`
 
 ```clojure
-(print-table [{:key :item :width 10}
-              {:key :status :width 8 :align :center}]
-  tasks
-  {:style :double})
+(fmt/clj-format true
+  [:table {:style :double}
+    [:col :item   {:width 10}]
+    [:col :status {:width 8 :align :center}]]
+  tasks)
 ```
 ```
 ╔════════════╦══════════╗
@@ -176,12 +209,12 @@ Nine built-in styles, selected with `:style`:
 Produces GitHub-flavored markdown tables with alignment markers:
 
 ```clojure
-(print-table
-  [{:key :name :width 12}
-   {:key :score :width 8 :align :right}
-   {:key :grade :width 8 :align :center}]
-  students
-  {:style :markdown})
+(fmt/clj-format true
+  [:table {:style :markdown}
+    [:col :name  {:width 12}]
+    [:col :score {:width 8 :align :right}]
+    [:col :grade {:width 8 :align :center}]]
+  students)
 ```
 ```
 | Name         |    Score |   Grade  |
@@ -196,10 +229,12 @@ Produces GitHub-flavored markdown tables with alignment markers:
 Emacs org-mode style:
 
 ```clojure
-(print-table
-  [{:key :task :width 15} {:key :owner :width 10} {:key :state :width 8}]
-  tasks
-  {:style :org})
+(fmt/clj-format true
+  [:table {:style :org}
+    [:col :task  {:width 15}]
+    [:col :owner {:width 10}]
+    [:col :state {:width 8}]]
+  tasks)
 ```
 ```
 |-----------------+------------+----------|
@@ -215,12 +250,12 @@ Emacs org-mode style:
 No vertical borders, columns separated by spaces:
 
 ```clojure
-(print-table
-  [{:key :name :width 12}
-   {:key :ext  :width 8 :align :right :title "Ext"}
-   {:key :office :width 10}]
-  directory
-  {:style :simple})
+(fmt/clj-format true
+  [:table {:style :simple}
+    [:col :name   {:width 12}]
+    [:col :ext    {:width 8 :align :right}]
+    [:col :office {:width 10}]]
+  directory)
 ```
 ```
 Name               Ext  Office
@@ -234,14 +269,13 @@ Mary              3246  Room 7
 No borders, no rules — just aligned columns:
 
 ```clojure
-(print-table [:name :age] data {:style :none})
+(fmt/clj-format true [:table {:style :none} :name :age] staff)
 ```
 ```
 Name   Age
 Alice  30
 Bob    25
 ```
-
 
 ## DSL Format Showcase
 
@@ -252,48 +286,43 @@ This is what makes the table facility a genuine showcase of the DSL.
 
 ```clojure
 ;; Comma-grouped integers
-{:key :qty :format [:int {:group true}]}          ;; 1,200
+[:col :qty {:format [:int {:group true}]}]           ;; 1,200
 
 ;; Signed integers
-{:key :score :format [:int {:group true :sign :always}]}  ;; +1,250
+[:col :score {:format [:int {:group true :sign :always}]}]  ;; +1,250
 
 ;; Monetary
-{:key :price :format :money}                       ;; 9.99
+[:col :price {:format :money}]                        ;; 9.99
 
 ;; Signed monetary
-{:key :bal :format [:money {:sign :always}]}       ;; +50.00
+[:col :bal {:format [:money {:sign :always}]}]        ;; +50.00
 
 ;; Fixed-point float
-{:key :rate :format [:float {:decimals 3}]}        ;; 0.042
+[:col :rate {:format [:float {:decimals 3}]}]         ;; 0.042
 
 ;; Hexadecimal
-{:key :code :format [:hex {:width 4 :fill \0}]}   ;; 00ff
+[:col :code {:format [:hex {:width 4 :fill \0}]}]     ;; 00ff
 ```
 
 ### Special Number Formats
 
 ```clojure
-;; Roman numerals
-{:key :rank :format :roman}                        ;; XIV
-
-;; English cardinal words
-{:key :count :format :cardinal}                    ;; forty-two
-
-;; English ordinal words
-{:key :place :format :ordinal}                     ;; forty-second
+[:col :rank  {:format :roman}]      ;; XIV
+[:col :count {:format :cardinal}]   ;; forty-two
+[:col :place {:format :ordinal}]    ;; forty-second
 ```
 
 ### Boolean and Conditional Formats
 
 ```clojure
 ;; Boolean dispatch
-{:key :active :format [:if "Yes" "No"]}
+[:col :active {:format [:if "Yes" "No"]}]
 
 ;; Numeric dispatch
-{:key :level :format [:choose "Low" "Medium" "High"]}
+[:col :level {:format [:choose "Low" "Medium" "High"]}]
 
 ;; Truthiness guard
-{:key :note :format [:when "Note: " :str]}
+[:col :note {:format [:when "Note: " :str]}]
 ```
 
 ### Putting It All Together
@@ -302,16 +331,19 @@ A single table using Roman numerals, signed integers, boolean dispatch,
 and signed monetary — five distinct DSL features in one call:
 
 ```clojure
-(print-table
-  [{:key :rank    :width 8  :align :center :format :roman}
-   {:key :name    :width 15}
-   {:key :score   :width 12 :align :right  :format [:int {:group true :sign :always}]}
-   {:key :active  :width 10 :align :center :format [:if "Yes" "No"]}
-   {:key :balance :width 14 :align :right  :format [:money {:sign :always}]}]
+(def players
   [{:rank 1 :name "Alice" :score 1250 :active true  :balance 50.0}
    {:rank 2 :name "Bob"   :score 890  :active true  :balance -12.30}
-   {:rank 3 :name "Carol" :score 450  :active false :balance 0.0}]
-  {:style :rounded :header-case :upcase})
+   {:rank 3 :name "Carol" :score 450  :active false :balance 0.0}])
+
+(fmt/clj-format true
+  [:table {:style :rounded :header-case :upcase}
+    [:col :rank    {:width 8  :align :center :format :roman}]
+    [:col :name    {:width 15}]
+    [:col :score   {:width 12 :align :right  :format [:int {:group true :sign :always}]}]
+    [:col :active  {:width 10 :align :center :format [:if "Yes" "No"]}]
+    [:col :balance {:width 14 :align :right  :format [:money {:sign :always}]}]]
+  players)
 ```
 ```
 ╭──────────┬─────────────────┬──────────────┬────────────┬────────────────╮
@@ -323,22 +355,30 @@ and signed monetary — five distinct DSL features in one call:
 ╰──────────┴─────────────────┴──────────────┴────────────┴────────────────╯
 ```
 
-
 ## Text Overflow
 
-### Ellipsis (default)
+Every column has an `:overflow` policy that controls what happens when
+a cell's content exceeds its `:width`:
 
-When text exceeds the column width, it is truncated with `"..."`:
+- `:ellipsis` (default) — truncate and append `"..."`
+- `:clip` — truncate without any marker
+- `:wrap` — word-wrap across multiple lines
+
+### Ellipsis
 
 ```clojure
-(print-table
-  [{:key :title  :width 25 :overflow :ellipsis}
-   {:key :author :width 15}
-   {:key :year   :width 6  :align :right}]
-  [{:title "The Hitchhiker's Guide to the Galaxy" :author "Douglas Adams"    :year 1979}
-   {:title "Dune"                                 :author "Frank Herbert"    :year 1965}
-   {:title "Neuromancer"                          :author "William Gibson"   :year 1984}
+(def books
+  [{:title "The Hitchhiker's Guide to the Galaxy" :author "Douglas Adams"     :year 1979}
+   {:title "Dune"                                 :author "Frank Herbert"     :year 1965}
+   {:title "Neuromancer"                          :author "William Gibson"    :year 1984}
    {:title "The Left Hand of Darkness"            :author "Ursula K. Le Guin" :year 1969}])
+
+(fmt/clj-format true
+  [:table
+    [:col :title  {:width 25 :overflow :ellipsis}]
+    [:col :author {:width 15}]
+    [:col :year   {:width 6 :align :right}]]
+  books)
 ```
 ```
 +---------------------------+-----------------+--------+
@@ -354,11 +394,13 @@ When text exceeds the column width, it is truncated with `"..."`:
 ### Custom Ellipsis
 
 ```clojure
-{:key :desc :width 20 :overflow :ellipsis :ellipsis " [more]"}
+(fmt/clj-format true
+  [:table {:header false}
+    [:col :desc {:width 20 :overflow :ellipsis :ellipsis " [more]"}]]
+  [{:desc "Short"}
+   {:desc "A description that is way too long to fit"}])
 ```
 ```
-+----------------------+
-| Desc                 |
 +----------------------+
 | Short                |
 | A description [more] |
@@ -370,19 +412,88 @@ When text exceeds the column width, it is truncated with `"..."`:
 Truncate without any marker:
 
 ```clojure
-{:key :s :width 10 :overflow :clip}
+[:col :s {:width 10 :overflow :clip}]
 ```
 
+### Word Wrapping
+
+With `:overflow :wrap`, long cells flow across multiple physical rows.
+Non-wrapping columns show their value only on the first row of each
+logical group:
+
+```clojure
+(def catalog
+  [{:name "Widget Pro"
+    :description "Premium widget with extended warranty and free shipping worldwide"
+    :price 49.99}
+   {:name "Gadget"
+    :description "Basic gadget"
+    :price 24.50}
+   {:name "Sprocket Deluxe"
+    :description "High-quality precision sprocket for industrial applications"
+    :price 12.75}])
+
+(fmt/clj-format true
+  [:table {:style :unicode :header-case :upcase}
+    [:col :name        {:width 12}]
+    [:col :description {:width 25 :overflow :wrap}]
+    [:col :price       {:width 10 :align :right :format :money}]]
+  catalog)
+```
+```
+┌──────────────┬───────────────────────────┬────────────┐
+│ NAME         │ DESCRIPTION               │      PRICE │
+├──────────────┼───────────────────────────┼────────────┤
+│ Widget Pro   │ Premium widget with       │      49.99 │
+│              │ extended warranty and     │            │
+│              │ free shipping worldwide   │            │
+│ Gadget       │ Basic gadget              │      24.50 │
+│ Sprocket ... │ High-quality precision    │      12.75 │
+│              │ sprocket for industrial   │            │
+│              │ applications              │            │
+└──────────────┴───────────────────────────┴────────────┘
+```
+
+Multiple wrapping columns are supported — the row grows to fit the
+tallest wrapped cell:
+
+```clojure
+(fmt/clj-format true
+  [:table {:style :unicode}
+    [:col :title {:width 15 :overflow :wrap}]
+    [:col :notes {:width 25 :overflow :wrap}]]
+  [{:title "Project Alpha"
+    :notes "Initial scoping complete. Timeline pending review."}
+   {:title "The Very Long Secondary Initiative"
+    :notes "On hold until Q3."}])
+```
+```
+┌─────────────────┬───────────────────────────┐
+│ Title           │ Notes                     │
+├─────────────────┼───────────────────────────┤
+│ Project Alpha   │ Initial scoping complete. │
+│                 │ Timeline pending review.  │
+│ The Very Long   │ On hold until Q3.         │
+│ Secondary       │                           │
+│ Initiative      │                           │
+└─────────────────┴───────────────────────────┘
+```
+
+Notes on wrap mode:
+- Wrapping requires an explicit `:width`. Without one, the column
+  auto-sizes to the longest value and wrapping never triggers.
+- Embedded newlines in the source text are preserved as hard breaks.
+- Long words exceeding the column width are broken at the width
+  boundary.
+- `:row-rules` is disabled in wrap mode to avoid rules between
+  continuation rows of the same logical group.
 
 ## Row Rules
 
 Add horizontal rules between every data row:
 
 ```clojure
-(print-table
-  [{:key :name :width 10} {:key :age :width 5 :align :right}]
-  [{:name "Alice" :age 30} {:name "Bob" :age 25} {:name "Carol" :age 35}]
-  {:style :unicode :row-rules true})
+(fmt/clj-format true [:table {:style :unicode :row-rules true} :name :age] staff)
 ```
 ```
 ┌────────────┬───────┐
@@ -396,21 +507,23 @@ Add horizontal rules between every data row:
 └────────────┴───────┘
 ```
 
-
 ## Footer with Aggregation
 
 Add a summary row below the data with aggregate functions:
 
 ```clojure
-(print-table
-  [{:key :item  :width 15}
-   {:key :qty   :width 10 :align :right :format [:int {:group true}]}
-   {:key :price :width 12 :align :right :format :money}]
+(def inventory
   [{:item "Widget"   :qty 100  :price 9.99}
    {:item "Gadget"   :qty 42   :price 24.50}
-   {:item "Sprocket" :qty 1200 :price 3.75}]
-  {:style :unicode :header-case :upcase
-   :footer {:label "Total" :fns {:qty :sum :price :sum}}})
+   {:item "Sprocket" :qty 1200 :price 3.75}])
+
+(fmt/clj-format true
+  [:table {:style :unicode :header-case :upcase
+           :footer {:label "Total" :fns {:qty :sum :price :sum}}}
+    [:col :item  {:width 15}]
+    [:col :qty   {:width 10 :align :right :format [:int {:group true}]}]
+    [:col :price {:width 12 :align :right :format :money}]]
+  inventory)
 ```
 ```
 ┌─────────────────┬────────────┬──────────────┐
@@ -427,7 +540,6 @@ Add a summary row below the data with aggregate functions:
 Built-in aggregate functions: `:sum`, `:avg`, `:min`, `:max`, `:count`.
 Custom aggregates are also supported as `(fn [values] result)`.
 
-
 ## Header Options
 
 ### Case Conversion
@@ -442,15 +554,8 @@ Custom aggregates are also supported as `(fn [values] result)`.
 ### Suppressing Headers
 
 ```clojure
-(print-table [:name :val] data {:header false})
+(fmt/clj-format true [:table {:header false} :name :val] data)
 ```
-```
-+-------+-----+
-| alpha | one |
-| beta  | two |
-+-------+-----+
-```
-
 
 ## Nil Handling
 
@@ -458,12 +563,16 @@ By default, nil values render as empty strings. Use `:nil-value` to
 customize:
 
 ```clojure
-(print-table
-  [{:key :name :width 10} {:key :email :width 20}]
+(def contacts
   [{:name "Alice" :email "alice@co.com"}
    {:name "Bob"   :email nil}
-   {:name "Carol" :email "carol@co.com"}]
-  {:nil-value "(none)"})
+   {:name "Carol" :email "carol@co.com"}])
+
+(fmt/clj-format true
+  [:table {:nil-value "(none)"}
+    [:col :name  {:width 10}]
+    [:col :email {:width 20}]]
+  contacts)
 ```
 ```
 +------------+----------------------+
@@ -478,21 +587,24 @@ customize:
 Nil values in typed columns (`:int`, `:money`, etc.) are automatically
 handled by switching to preprocessed mode — no crash, no special effort.
 
-
 ## Computed Columns and Function Formats
 
 ### Computed Columns
 
-Use a function as `:key` to derive values from the row:
+Use a function as the column key to derive values from the row:
 
 ```clojure
-(print-table
-  [{:key (fn [r] (str (:first r) " " (:last r)))
-    :title "Full Name" :width 18}
-   {:key :active :width 10 :align :center
-    :format (fn [v] (if v "Active" "Inactive"))}]
+(def people
   [{:first "Alice" :last "Smith" :active true}
    {:first "Bob"   :last "Jones" :active false}])
+
+(fmt/clj-format true
+  [:table
+    [:col (fn [r] (str (:first r) " " (:last r)))
+          {:title "Full Name" :width 18}]
+    [:col :active {:width 10 :align :center
+                   :format (fn [v] (if v "Active" "Inactive"))}]]
+  people)
 ```
 ```
 +--------------------+------------+
@@ -506,16 +618,7 @@ Use a function as `:key` to derive values from the row:
 ### Function Formats
 
 Use a function as `:format` for arbitrary value-to-string transformations.
-
-
-## Default Column Options
-
-Apply options to all columns at once with `:defaults`:
-
-```clojure
-(print-table [:name :role] data {:defaults {:align :right}})
-```
-
+The column's `:width` then pads the string result.
 
 ## Inspecting the Generated DSL
 
@@ -524,71 +627,40 @@ rendering. This is useful for learning how the DSL works, debugging, or
 reusing the generated format.
 
 ```clojure
-(let [{:keys [dsl args]} (table-dsl
-                            [{:key :name :width 10}
-                             {:key :age :width 5 :align :right :format :int}]
-                            [{:name "Alice" :age 30}])]
-  (println "DSL:" (pr-str dsl))
-  (println "Args:" (pr-str args)))
-```
-```
-DSL:  ["+------------+-------+" :nl
-       "| " [:str {:width 10, :case :capitalize}]
-       " | " [:str {:width 5, :case :capitalize, :pad :left}] " |" :nl
-       "+------------+-------+" :nl
-       [:each {:from :sublists}
-        "| " [:str {:width 10}] " | " [:int {:width 5}] " |" :nl]
-       "+------------+-------+"]
-Args: ["Name" "Age" [["Alice" 30]]]
+(fmt/table-dsl [:table :name :age] [{:name "Alice" :age 30}])
+;; =>
+;; {:dsl  ["+------+-----+" :nl
+;;         "| " [:str {:width 4 :case :capitalize}]
+;;         " | " [:str {:width 3 :case :capitalize :pad :left}] " |" :nl
+;;         "+------+-----+" :nl
+;;         [:each {:from :sublists}
+;;           "| " [:str {:width 4}] " | " [:str {:width 3}] " |" :nl]
+;;         "+------+-----+"]
+;;  :args ["Name" "Age" [["Alice" 30]]]}
 ```
 
 The DSL shows exactly how the table is constructed:
 - Rule strings are literal text
 - Header cells use `:str` with `:case :capitalize`
-- Data cells use typed directives (`:int` for the age column)
+- Data cells use typed directives (e.g. `:int` when `:format :int` is set)
 - `:each {:from :sublists}` iterates over data rows
 - The argument list feeds header titles, then the data sublists
 
 You can render this yourself:
 
 ```clojure
-(apply clj-format.core/clj-format nil dsl args)
+(apply fmt/clj-format nil dsl args)
 ```
 
-
-## Table Options Reference
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `:style` | keyword/map | `:ascii` | Border style |
-| `:header` | boolean | `true` | Show header row |
-| `:header-rule` | boolean | `true` | Rule under header |
-| `:header-case` | keyword | `:capitalize` | Header case conversion |
-| `:top-rule` | boolean | `true` | Top border |
-| `:bottom-rule` | boolean | `true` | Bottom border |
-| `:row-rules` | boolean | `false` | Rules between rows |
-| `:nil-value` | string | `""` | Display for nil values |
-| `:footer` | map | nil | Footer config |
-| `:defaults` | map | `{}` | Default column options |
-
-## API Summary
+## Summary
 
 ```clojure
-;; Returns a string
-(format-table rows)
-(format-table rows opts)
-(format-table columns rows)
-(format-table columns rows opts)
+;; The one and only entry point — writer semantics match every
+;; other clj-format call:
+(fmt/clj-format nil  [:table ...] rows)   ;; return string
+(fmt/clj-format true [:table ...] rows)   ;; print
+(fmt/clj-format sw   [:table ...] rows)   ;; write to writer
 
-;; Prints to *out*
-(print-table rows)
-(print-table rows opts)
-(print-table columns rows)
-(print-table columns rows opts)
-
-;; Returns {:dsl [...] :args [...]}
-(table-dsl rows)
-(table-dsl rows opts)
-(table-dsl columns rows)
-(table-dsl columns rows opts)
+;; DSL inspection
+(fmt/table-dsl [:table ...] rows)          ;; => {:dsl ... :args ...}
 ```
