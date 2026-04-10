@@ -91,8 +91,8 @@ name column elides; the description wraps cleanly at word boundaries.
 ## Anything multi-line goes in a cell
 
 Wrap mode preserves interior whitespace verbatim, so any pre-formatted
-string drops cleanly into a cell. Here an ASCII inner table is
-rendered as a column format and lives inside a Unicode outer table:
+string drops cleanly into a cell. An ASCII inner table rendered as a
+column `:format` sits inside a Unicode outer table:
 
 ```clojure
 (def inner
@@ -126,10 +126,38 @@ rendered as a column format and lives inside a Unicode outer table:
 └────────────┴────────────────────────┘
 ```
 
-The same recipe — `:overflow :wrap` plus a function `:format` — puts
-any multi-line content in a cell. Load `clj-format.figlet` and
-`clj-figlet.core/render` becomes a drop-in banner column; any external
-renderer does the same.
+The same recipe — `:overflow :wrap` plus a function `:format` — works
+for any multi-line content. Load `clj-format.figlet`, carry a `:font`
+on each row, and `clj-figlet.core/render` becomes a computed column.
+Every row picks its own font:
+
+```clojure
+(require 'clj-format.figlet)
+(require '[clj-figlet.core :as cf])
+
+(fmt/clj-format true
+  [:table {:style :unicode}
+    [:col :name {:width 12}]
+    [:col (fn [row] (cf/render (:font row) (:banner row)))
+          {:title "Banner" :width 36 :overflow :wrap}]]
+  [{:name "Alice" :banner "HELLO" :font "small"}
+   {:name "Bob"   :banner "HI"    :font "slant"}])
+```
+```
+┌──────────────┬──────────────────────────────────────┐
+│ Name         │ Banner                               │
+├──────────────┼──────────────────────────────────────┤
+│ Alice        │  _  _ ___ _    _    ___              │
+│              │ | || | __| |  | |  / _ \             │
+│              │ | __ | _|| |__| |_| (_) |            │
+│              │ |_||_|___|____|____\___/             │
+│ Bob          │     __  ______                       │
+│              │    / / / /  _/                       │
+│              │   / /_/ // /                         │
+│              │  / __  // /                          │
+│              │ /_/ /_/___/                          │
+└──────────────┴──────────────────────────────────────┘
+```
 
 ## Markdown for docs and READMEs
 
