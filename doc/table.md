@@ -22,7 +22,9 @@ everything.
 
 ## Quick Start
 
-The simplest spec — just the directive and a seq of maps:
+The simplest spec is just the directive and a seq of maps — columns
+are inferred from the first row, widths auto-size, and keyword keys
+are humanized into titles (`:first-name` → `"First Name"`):
 
 ```clojure
 (def staff
@@ -42,36 +44,17 @@ The simplest spec — just the directive and a seq of maps:
 +-------+-----+--------+
 ```
 
-Columns are inferred from the first row's map keys. Widths auto-size.
-Headers are humanized from keywords: `:first-name` becomes `"First Name"`.
-
-## Selecting Columns
-
-Bare keywords inside `[:table ...]` are columns:
+The table body accepts three column shapes, in order of terseness:
 
 ```clojure
-(fmt/clj-format true [:table :name :role] staff)
-```
-```
-+-------+--------+
-| Name  | Role   |
-+-------+--------+
-| Alice | Admin  |
-| Bob   | User   |
-| Carol | Editor |
-+-------+--------+
+:name                                    ;; bare keyword
+[:col :name]                             ;; explicit, same as above
+[:col :name {:width 20 :align :right}]   ;; with options
 ```
 
-`[:col :name]` is an equivalent, fully explicit form. Use it when a
-column needs options:
-
-```clojure
-(fmt/clj-format true
-  [:table
-    [:col :name {:width 20}]
-    [:col :role {:width 12 :align :right}]]
-  staff)
-```
+Mix and match as needed. Bare keywords are for quick filters; the
+`[:col ...]` form takes over as soon as you need width, alignment, a
+typed format, or any other option.
 
 ## Column Options
 
@@ -118,66 +101,65 @@ Hiccup form):
 
 Nine built-in styles, selected with `:style`:
 
-### `:ascii` (default)
+| Style | Character set | Typical use |
+|-------|---------------|-------------|
+| `:ascii` (default) | `+`, `-`, `\|` | Portable terminals, logs, anywhere |
+| `:unicode` | Box-drawing `┌─┬┐` | Modern terminals |
+| `:rounded` | Soft corners `╭─┬╮` | Reports, softer look |
+| `:heavy` | Thick strokes `┏━┳┓` | Emphasis |
+| `:double` | Double lines `╔═╦╗` | Emphasis, classic feel |
+| `:markdown` | Pipes with alignment markers | README/GitHub documents |
+| `:org` | Org-mode `\|`/`+` | Emacs buffers |
+| `:simple` | Horizontal rules only | Pipes, no box |
+| `:none` | Spaces only | Plain alignment |
+
+### Box-style gallery
+
+The basic box styles share the same structure — only the border
+characters differ. Here is the same 3-column table rendered in four
+different styles:
 
 ```clojure
-(fmt/clj-format true [:table :name :score] scores)
-```
-```
-+-------+-------+
-| Name  | Score |
-+-------+-------+
-| Alice |    95 |
-| Bob   |    82 |
-+-------+-------+
+(def cities
+  [{:city "New York" :pop 8336817}
+   {:city "London"   :pop 8982000}
+   {:city "Tokyo"    :pop 13960000}])
+
+(def city-cols
+  [[:col :city {:width 12}]
+   [:col :pop  {:width 12 :align :right
+                :format [:int {:group true}] :title "Population"}]])
 ```
 
-### `:unicode`
+`:unicode`:
 
-```clojure
-(fmt/clj-format true
-  [:table {:style :unicode :header-case :upcase}
-    [:col :name {:width 12}]
-    [:col :dept {:width 10}]
-    [:col :salary {:width 10 :align :right :format [:int {:group true}]}]]
-  employees)
 ```
-```
-┌──────────────┬────────────┬────────────┐
-│ NAME         │ DEPT       │     SALARY │
-├──────────────┼────────────┼────────────┤
-│ Alice        │ Eng        │     95,000 │
-│ Bob          │ Sales      │     72,000 │
-│ Carol        │ Eng        │     88,000 │
-└──────────────┴────────────┴────────────┘
+┌──────────────┬──────────────┐
+│ City         │   Population │
+├──────────────┼──────────────┤
+│ New York     │    8,336,817 │
+│ London       │    8,982,000 │
+│ Tokyo        │   13,960,000 │
+└──────────────┴──────────────┘
 ```
 
-### `:rounded`
+`:rounded`:
 
-```clojure
-(fmt/clj-format true [:table {:style :rounded} :name :score] scores)
 ```
-```
-╭──────────┬──────────╮
-│ Name     │    Score │
-├──────────┼──────────┤
-│ Alice    │       95 │
-╰──────────┴──────────╯
+╭──────────────┬──────────────╮
+│ City         │   Population │
+├──────────────┼──────────────┤
+│ New York     │    8,336,817 │
+│ London       │    8,982,000 │
+│ Tokyo        │   13,960,000 │
+╰──────────────┴──────────────╯
 ```
 
-### `:heavy`
+`:heavy`:
 
-```clojure
-(fmt/clj-format true
-  [:table {:style :heavy :header-case :upcase}
-    [:col :city {:width 12}]
-    [:col :pop  {:width 12 :align :right
-                 :format [:int {:group true}] :title "Population"}]]
-  cities)
-```
 ```
 ┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ CITY         ┃   POPULATION ┃
+┃ City         ┃   Population ┃
 ┣━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━┫
 ┃ New York     ┃    8,336,817 ┃
 ┃ London       ┃    8,982,000 ┃
@@ -185,30 +167,34 @@ Nine built-in styles, selected with `:style`:
 ┗━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━┛
 ```
 
-### `:double`
+`:double`:
+
+```
+╔══════════════╦══════════════╗
+║ City         ║   Population ║
+╠══════════════╬══════════════╣
+║ New York     ║    8,336,817 ║
+║ London       ║    8,982,000 ║
+║ Tokyo        ║   13,960,000 ║
+╚══════════════╩══════════════╝
+```
+
+`:org` follows the same layout with `|` on every edge and `+` at
+junctions — the Emacs org-mode convention. `:ascii` is the default
+portable form you have already seen.
+
+### Markdown output for docs
+
+`:markdown` produces a GitHub-flavored markdown table with per-column
+alignment markers in the header rule, so that right-aligned numeric
+columns stay right-aligned when the markdown is rendered:
 
 ```clojure
-(fmt/clj-format true
-  [:table {:style :double}
-    [:col :item   {:width 10}]
-    [:col :status {:width 8 :align :center}]]
-  tasks)
-```
-```
-╔════════════╦══════════╗
-║ Item       ║  Status  ║
-╠════════════╬══════════╣
-║ Task A     ║   Done   ║
-║ Task B     ║    WIP   ║
-║ Task C     ║   Todo   ║
-╚════════════╩══════════╝
-```
+(def students
+  [{:name "Alice" :score 95 :grade "A"}
+   {:name "Bob"   :score 82 :grade "B"}
+   {:name "Carol" :score 71 :grade "C"}])
 
-### `:markdown`
-
-Produces GitHub-flavored markdown tables with alignment markers:
-
-```clojure
 (fmt/clj-format true
   [:table {:style :markdown}
     [:col :name  {:width 12}]
@@ -224,57 +210,32 @@ Produces GitHub-flavored markdown tables with alignment markers:
 | Carol        |       71 |     C    |
 ```
 
-### `:org`
+### Borderless layouts for pipes and logs
 
-Emacs org-mode style:
-
-```clojure
-(fmt/clj-format true
-  [:table {:style :org}
-    [:col :task  {:width 15}]
-    [:col :owner {:width 10}]
-    [:col :state {:width 8}]]
-  tasks)
-```
-```
-|-----------------+------------+----------|
-| Task            | Owner      | State    |
-|-----------------+------------+----------|
-| Parser port     | Dan        | done     |
-| CLJS parity     | Dan        | green    |
-|-----------------+------------+----------|
-```
-
-### `:simple`
-
-No vertical borders, columns separated by spaces:
+`:simple` and `:none` drop vertical borders — useful for output that
+will be piped into other tools or displayed in fixed-width logs.
+`:simple` keeps a horizontal rule under the header; `:none` drops
+rules entirely:
 
 ```clojure
+(def directory
+  [{:name "Joe"  :ext 3215 :office "Room 12" :status :active}
+   {:name "Mary" :ext 3246 :office "Room 7"  :status :away}])
+
 (fmt/clj-format true
   [:table {:style :simple}
-    [:col :name   {:width 12}]
-    [:col :ext    {:width 8 :align :right}]
-    [:col :office {:width 10}]]
+    [:col :name   {:width 10}]
+    [:col :ext    {:width 5 :align :right :format :int}]
+    [:col :office {:width 10}]
+    [:col :status {:width 8 :align :center
+                   :format (fn [s] (if (= :active s) "on" "off"))}]]
   directory)
 ```
 ```
-Name               Ext  Office
-------------  --------  ----------
-Joe               3215  Room 12
-Mary              3246  Room 7
-```
-
-### `:none`
-
-No borders, no rules — just aligned columns:
-
-```clojure
-(fmt/clj-format true [:table {:style :none} :name :age] staff)
-```
-```
-Name   Age
-Alice  30
-Bob    25
+Name          Ext  Office       Status
+----------  -----  ----------  --------
+Joe          3215  Room 12        on
+Mary         3246  Room 7         off
 ```
 
 ## DSL Format Showcase
@@ -391,35 +352,16 @@ a cell's content exceeds its `:width`:
 +---------------------------+-----------------+--------+
 ```
 
-### Custom Ellipsis
-
-```clojure
-(fmt/clj-format true
-  [:table {:header false}
-    [:col :desc {:width 20 :overflow :ellipsis :ellipsis " [more]"}]]
-  [{:desc "Short"}
-   {:desc "A description that is way too long to fit"}])
-```
-```
-+----------------------+
-| Short                |
-| A description [more] |
-+----------------------+
-```
-
-### Clip
-
-Truncate without any marker:
-
-```clojure
-[:col :s {:width 10 :overflow :clip}]
-```
+The `:ellipsis` option takes a custom marker string, so you can replace
+the default `"..."` with `" [more]"`, `"…"`, or any other indicator.
+`:overflow :clip` truncates without any marker at all — useful when
+every visible character is load-bearing.
 
 ### Word Wrapping
 
 With `:overflow :wrap`, long cells flow across multiple physical rows.
 Non-wrapping columns show their value only on the first row of each
-logical group:
+logical group, and typed numeric columns keep formatting normally:
 
 ```clojure
 (def catalog
@@ -454,30 +396,10 @@ logical group:
 └──────────────┴───────────────────────────┴────────────┘
 ```
 
-Multiple wrapping columns are supported — the row grows to fit the
-tallest wrapped cell:
-
-```clojure
-(fmt/clj-format true
-  [:table {:style :unicode}
-    [:col :title {:width 15 :overflow :wrap}]
-    [:col :notes {:width 25 :overflow :wrap}]]
-  [{:title "Project Alpha"
-    :notes "Initial scoping complete. Timeline pending review."}
-   {:title "The Very Long Secondary Initiative"
-    :notes "On hold until Q3."}])
-```
-```
-┌─────────────────┬───────────────────────────┐
-│ Title           │ Notes                     │
-├─────────────────┼───────────────────────────┤
-│ Project Alpha   │ Initial scoping complete. │
-│                 │ Timeline pending review.  │
-│ The Very Long   │ On hold until Q3.         │
-│ Secondary       │                           │
-│ Initiative      │                           │
-└─────────────────┴───────────────────────────┘
-```
+Note how `Sprocket Deluxe` gets elided (the name column does not wrap)
+while `description` wraps across three physical rows. The row grows
+to fit the tallest wrapped cell; any number of columns can wrap
+simultaneously and independently.
 
 Notes on wrap mode:
 - Wrapping requires an explicit `:width`. Without one, the column
@@ -583,23 +505,37 @@ inner table inside a `:unicode` outer table is perfectly legible.
 Same-style nesting (unicode inside unicode, for example) also works
 but can be visually noisier.
 
-## Row Rules
+## Row Rules for Scanning Dense Data
 
-Add horizontal rules between every data row:
+For dense rows with many numeric columns, `:row-rules true` draws a
+horizontal rule between every row so the eye can track across without
+losing the line. Here combined with `:rounded` borders, an `:roman`
+rank column, and signed grouped integers:
 
 ```clojure
-(fmt/clj-format true [:table {:style :unicode :row-rules true} :name :age] staff)
+(def leaderboard
+  [{:rank 1 :team "Red"    :wins 12 :delta  +3}
+   {:rank 2 :team "Blue"   :wins  9 :delta  -1}
+   {:rank 3 :team "Green"  :wins  7 :delta  +2}])
+
+(fmt/clj-format true
+  [:table {:style :rounded :row-rules true :header-case :upcase}
+    [:col :rank  {:width 6  :align :center :format :roman}]
+    [:col :team  {:width 10}]
+    [:col :wins  {:width 6  :align :right :format :int}]
+    [:col :delta {:width 7  :align :right :format [:int {:sign :always}]}]]
+  leaderboard)
 ```
 ```
-┌────────────┬───────┐
-│ Name       │   Age │
-├────────────┼───────┤
-│ Alice      │    30 │
-├────────────┼───────┤
-│ Bob        │    25 │
-├────────────┼───────┤
-│ Carol      │    35 │
-└────────────┴───────┘
+╭────────┬────────────┬────────┬─────────╮
+│  RANK  │ TEAM       │   WINS │   DELTA │
+├────────┼────────────┼────────┼─────────┤
+│    I   │ Red        │     12 │      +3 │
+├────────┼────────────┼────────┼─────────┤
+│   II   │ Blue       │      9 │      -1 │
+├────────┼────────────┼────────┼─────────┤
+│   III  │ Green      │      7 │      +2 │
+╰────────┴────────────┴────────┴─────────╯
 ```
 
 ## Footer with Aggregation
@@ -652,35 +588,41 @@ Custom aggregates are also supported as `(fn [values] result)`.
 (fmt/clj-format true [:table {:header false} :name :val] data)
 ```
 
-## Nil Handling
+## Nil Handling in Typed Columns
 
-By default, nil values render as empty strings. Use `:nil-value` to
-customize:
+By default nil renders as an empty string, but you can supply a
+`:nil-value` placeholder. More interestingly, nil works seamlessly in
+*typed* columns — the facility detects nil cells and silently falls
+back to preprocessed rendering for that column, so `:int`, `:money`,
+and other typed formats never crash on missing data:
 
 ```clojure
-(def contacts
-  [{:name "Alice" :email "alice@co.com"}
-   {:name "Bob"   :email nil}
-   {:name "Carol" :email "carol@co.com"}])
+(def readings
+  [{:sensor "A1" :temp 72.4 :pressure 1013.2}
+   {:sensor "A2" :temp nil  :pressure 1012.8}
+   {:sensor "B1" :temp 68.1 :pressure nil}])
 
 (fmt/clj-format true
-  [:table {:nil-value "(none)"}
-    [:col :name  {:width 10}]
-    [:col :email {:width 20}]]
-  contacts)
+  [:table {:style :heavy :nil-value "--"}
+    [:col :sensor   {:width 8}]
+    [:col :temp     {:width 8 :align :right :format [:float {:decimals 1}]
+                     :title "Temp °F"}]
+    [:col :pressure {:width 10 :align :right :format [:float {:decimals 1}]
+                     :title "Pressure"}]]
+  readings)
 ```
 ```
-+------------+----------------------+
-| Name       | Email                |
-+------------+----------------------+
-| Alice      | alice@co.com         |
-| Bob        | (none)               |
-| Carol      | carol@co.com         |
-+------------+----------------------+
+┏━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Sensor   ┃  Temp °F ┃   Pressure ┃
+┣━━━━━━━━━━╋━━━━━━━━━━╋━━━━━━━━━━━━┫
+┃ A1       ┃     72.4 ┃     1013.2 ┃
+┃ A2       ┃       -- ┃     1012.8 ┃
+┃ B1       ┃     68.1 ┃         -- ┃
+┗━━━━━━━━━━┻━━━━━━━━━━┻━━━━━━━━━━━━┛
 ```
 
-Nil values in typed columns (`:int`, `:money`, etc.) are automatically
-handled by switching to preprocessed mode — no crash, no special effort.
+Notice that the `--` placeholders still obey each column's width and
+alignment — the fallback is per-column, not per-row.
 
 ## Computed Columns and Function Formats
 
