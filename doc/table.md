@@ -483,10 +483,105 @@ Notes on wrap mode:
 - Wrapping requires an explicit `:width`. Without one, the column
   auto-sizes to the longest value and wrapping never triggers.
 - Embedded newlines in the source text are preserved as hard breaks.
-- Long words exceeding the column width are broken at the width
-  boundary.
+- **Lines that already fit are preserved verbatim** — interior
+  whitespace is not collapsed. This matters for pre-formatted content
+  like ASCII art or nested tables (see below).
+- Long words or lines exceeding the column width are broken at the
+  width boundary.
 - `:row-rules` is disabled in wrap mode to avoid rules between
   continuation rows of the same logical group.
+
+### Embedding Multi-Line Content
+
+Because wrap mode preserves lines that already fit, any pre-formatted
+multi-line string drops cleanly into a cell — as long as the column is
+at least as wide as the widest line. The recipe is always the same:
+
+1. Column has `:overflow :wrap`
+2. Column has a `:format` function returning the rendered string
+3. Column `:width` is ≥ the widest line of the rendered content
+
+#### FIGlet banners in a cell
+
+With `clj-format.figlet` loaded (see the main README), you can render
+directly via the `[:figlet ...]` directive, or drop a pre-rendered
+banner into a table cell using `clj-figlet.core/render` as a column
+format:
+
+```clojure
+(require '[clj-figlet.core :as cf])
+
+(fmt/clj-format true
+  [:table {:style :unicode}
+    [:col :name   {:width 12}]
+    [:col :banner {:width 30 :overflow :wrap
+                   :format (fn [s] (cf/render "small" s))}]]
+  [{:name "Alice" :banner "HELLO"}
+   {:name "Bob"   :banner "HI"}])
+```
+```
+┌──────────────┬────────────────────────────────┐
+│ Name         │ Banner                         │
+├──────────────┼────────────────────────────────┤
+│ Alice        │  _  _ ___ _    _    ___        │
+│              │ | || | __| |  | |  / _ \       │
+│              │ | __ | _|| |__| |_| (_) |      │
+│              │ |_||_|___|____|____\___/       │
+│ Bob          │  _  _ ___                      │
+│              │ | || |_ _|                     │
+│              │ | __ || |                      │
+│              │ |_||_|___|                     │
+└──────────────┴────────────────────────────────┘
+```
+
+The figlet's internal whitespace is preserved exactly — every space
+contributes to the ASCII art. Make sure the column width covers the
+widest rendered line or the banner will get re-wrapped.
+
+#### Nested tables in a cell
+
+Any rendered table is itself a multi-line string, so one table can
+live inside another. The outer column's `:format` function renders
+the inner table; wrap mode expands the result across physical rows:
+
+```clojure
+(def inner-fn
+  (fn [rows]
+    (fmt/clj-format nil
+      [:table {:style :ascii :header false}
+        [:col :k {:width 5}]
+        [:col :v {:width 5 :align :right}]]
+      rows)))
+
+(fmt/clj-format true
+  [:table {:style :unicode}
+    [:col :group   {:width 10}]
+    [:col :details {:width 22 :overflow :wrap :format inner-fn}]]
+  [{:group "Team A"
+    :details [{:k "Mon" :v 10} {:k "Tue" :v 15} {:k "Wed" :v 8}]}
+   {:group "Team B"
+    :details [{:k "Mon" :v 7} {:k "Tue" :v 12}]}])
+```
+```
+┌────────────┬────────────────────────┐
+│ Group      │ Details                │
+├────────────┼────────────────────────┤
+│ Team A     │ +-------+-------+      │
+│            │ | Mon   |    10 |      │
+│            │ | Tue   |    15 |      │
+│            │ | Wed   |     8 |      │
+│            │ +-------+-------+      │
+│ Team B     │ +-------+-------+      │
+│            │ | Mon   |     7 |      │
+│            │ | Tue   |    12 |      │
+│            │ +-------+-------+      │
+└────────────┴────────────────────────┘
+```
+
+Inner and outer tables can use different border styles — an ASCII
+inner table inside a `:unicode` outer table is perfectly legible.
+Same-style nesting (unicode inside unicode, for example) also works
+but can be visually noisier.
 
 ## Row Rules
 
@@ -651,6 +746,17 @@ You can render this yourself:
 ```clojure
 (apply fmt/clj-format nil dsl args)
 ```
+
+## See Also
+
+- **`clj-format.figlet`** — optional `:figlet` directive for ASCII-art
+  banners. When loaded, `[:figlet {:font "small"} "HELLO"]` expands to
+  a multi-line banner string anywhere in a DSL form, and the same
+  `clj-figlet.core/render` call also works as a column `:format`
+  function for banner columns.
+- **`doc/dsl.md`** — full DSL reference covering every cl-format
+  directive. Any of those directives can be used as a column `:format`.
+- **`doc/examples.md`** — 50+ side-by-side cl-format examples.
 
 ## Summary
 

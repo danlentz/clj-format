@@ -388,6 +388,52 @@
                           {:name "B" :desc "short"}])]
       (is (= 1 (count (line-widths result)))))))
 
+(deftest wrap-preserves-preformatted-whitespace-test
+  (testing "Lines that fit are preserved verbatim — interior whitespace is NOT collapsed"
+    ;; Pre-formatted content: each line has meaningful multi-space structure
+    (let [art "a   b   c\n  d    e\nf       g"
+          result (render [:table {:header false}
+                          [:col :v {:width 20 :overflow :wrap
+                                    :format (fn [s] s)}]]
+                         [{:v art}])]
+      (is (str/includes? result "a   b   c")
+          "multi-space interior preserved")
+      (is (str/includes? result "  d    e")
+          "leading and internal whitespace preserved")
+      (is (str/includes? result "f       g")
+          "very wide whitespace preserved"))))
+
+(deftest wrap-embedded-multiline-test
+  (testing "Multi-line cell content is expanded line-by-line preserving structure"
+    (let [box "┌───┐\n│ A │\n└───┘"
+          result (render [:table {:header false}
+                          [:col :v {:width 10 :overflow :wrap
+                                    :format (fn [s] s)}]]
+                         [{:v box}])]
+      (is (str/includes? result "┌───┐"))
+      (is (str/includes? result "│ A │"))
+      (is (str/includes? result "└───┘")))))
+
+(deftest wrap-nested-table-test
+  (testing "A rendered table string can live inside another table cell"
+    (let [inner-fn (fn [rows]
+                     (fmt/clj-format nil
+                                     [:table {:style :ascii :header false}
+                                      [:col :k {:width 4}]
+                                      [:col :v {:width 4 :align :right}]]
+                                     rows))
+          result (render [:table {:style :unicode}
+                          [:col :group {:width 8}]
+                          [:col :stats {:width 20 :overflow :wrap :format inner-fn}]]
+                         [{:group "A" :stats [{:k "x" :v 1} {:k "y" :v 2}]}])]
+      ;; Outer unicode borders
+      (is (str/includes? result "┌"))
+      ;; Inner ASCII borders survive inside the cell
+      (is (str/includes? result "+------+"))
+      ;; Inner data is visible
+      (is (str/includes? result "x"))
+      (is (str/includes? result "y")))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Header Options

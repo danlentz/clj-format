@@ -235,11 +235,25 @@
       :else                (str (subs s 0 (- width elen)) ell))))
 
 (defn- wrap-line
-  "Greedily word-wrap a single line of text to fit within width.
-   Breaks at word boundaries; splits words longer than width."
+  "Fit a single line of text within width.
+
+   If the line already fits, it is preserved verbatim — interior
+   whitespace is not collapsed. This matters for pre-formatted
+   content like ASCII art banners and nested table renderings,
+   where every space is load-bearing.
+
+   If the line exceeds width, greedy word-wrap takes over: break at
+   word boundaries, splitting words longer than width at the width
+   boundary."
   [s width]
-  (if (empty? s)
+  (cond
+    (empty? s)
     [""]
+
+    (<= (count s) width)
+    [s]
+
+    :else
     (let [words (str/split s #"\s+")]
       (loop [remaining words
              line      ""
