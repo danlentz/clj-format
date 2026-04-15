@@ -167,121 +167,6 @@ Applied as a `:case` option — no extra nesting:
 [:goto {:n 0}]                        ;; jump to arg 0
 ```
 
-## Real-World Examples
-
-### Date formatting
-```clojure
-(clj-format nil [[:int {:width 4 :fill \0}] "-"
-                 [:int {:width 2 :fill \0}] "-"
-                 [:int {:width 2 :fill \0}]]
-  2005 6 10)
-;; => "2005-06-10"
-```
-
-### Search results with grammar
-```clojure
-;; "There are 3 results: 46, 38, 22"
-;; "There is 1 result: 46"
-(clj-format nil
-  ["There " [:choose {:default "are"} "are" "is"] :back
-   " " :int " result" [:plural {:rewind true}] ": "
-   [:each {:sep ", "} :int]]
-  n results)
-```
-
-### Tabular status board with `:justify`
-```clojure
-;; cl-format:
-;; ~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}
-
-(clj-format nil
-  [[:justify {:width 36} "Task" "Owner" "State"] :nl
-   [:each
-    [:justify {:width 36} :str :str :str] :nl]]
-  ["Parser port" "Dan" "done"
-   "CLJS parity" "Dan" "green"])
-;; =>
-;; Task           Owner           State
-;; Parser port         Dan         done
-;; CLJS parity         Dan        green
-```
-
-### Tabular numeric report with tabs
-```clojure
-;; cl-format:
-;; ~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}
-
-(clj-format nil
-  ["Name" [:tab {:col 16}] "Value" [:tab {:col 28}] "Histogram" [:tab {:col 46}] "Count" :nl
-   [:str {:width 14 :fill \-}] [:tab {:col 16}]
-   [:str {:width 10 :fill \-}] [:tab {:col 28}]
-   [:str {:width 16 :fill \-}] [:tab {:col 46}]
-   [:str {:width 5 :fill \-}] :nl
-   [:each {:from :sublists}
-    :str [:tab {:col 16}]
-    [:float {:width 6 :decimals 2}] [:tab {:col 28}]
-    [:tilde {:count :V}] [:tab {:col 46}]
-    :back :int :nl]]
-  "" "" "" ""
-  [["Alpha" 3.14 5]
-   ["Beta" 12.0 2]
-   ["Gamma" 98.5 9]
-   ["Delta" 42.42 7]])
-;; =>
-;; Name            Value       Histogram         Count
-;; --------------  ----------  ----------------  -----
-;; Alpha             3.14      ~~~~~             5
-;; Beta             12.00      ~~                2
-;; Gamma            98.50      ~~~~~~~~~         9
-;; Delta            42.42      ~~~~~~~           7
-```
-
-### Wrapped notation with `:logical-block`
-```clojure
-;; cl-format:
-;; ~<rgb(~;~D, ~D, ~D~;)~:>
-
-(clj-format nil
-  [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
-  [255 140 0])
-;; => "rgb(255, 140, 0)"
-```
-
-### Word-wrapped prose
-```clojure
-;; cl-format:
-;; ~%~%~{~<~%~0,20:;~a ~>~}
-
-(clj-format nil
-  [:nl :nl
-   [:each
-    [:justify :nl
-     [:clause {:width 0 :pad-step 20 :pad-before true}
-      :str " "]]]]
-  ["The" "power" "of" "FORMAT" "is"
-   "that" "it" "can" "wrap" "words"
-   "beautifully."])
-;; =>
-;;
-;; The power of FORMAT
-;; is that it can wrap
-;; words beautifully.
-```
-
-### XML tag formatter
-```clojure
-(clj-format nil
-  ["<" :str [:each :stop " " :str "=\"" :str "\""] [:if "/" nil] ">" :nl]
-  "img" ["src" "cat.jpg" "alt" "cat"] true)
-;; => "<img src=\"cat.jpg\" alt=\"cat\"/>\n"
-```
-
-### Lowercase Roman numerals
-```clojure
-(clj-format nil [:roman {:case :downcase}] 42)
-;; => "xlii"
-```
-
 ## Tables
 
 Tables are a first-class DSL form: `[:table opts? & cols]`. They render
@@ -507,6 +392,121 @@ styles ship built-in (`:ascii`, `:unicode`, `:rounded`, `:heavy`,
 `:double`, `:markdown`, `:org`, `:simple`, `:none`), and every column
 option (width, alignment, overflow, case, title, computed keys) is
 documented there.
+
+## Real-World Examples
+
+### Date formatting
+```clojure
+(clj-format nil [[:int {:width 4 :fill \0}] "-"
+                 [:int {:width 2 :fill \0}] "-"
+                 [:int {:width 2 :fill \0}]]
+  2005 6 10)
+;; => "2005-06-10"
+```
+
+### Search results with grammar
+```clojure
+;; "There are 3 results: 46, 38, 22"
+;; "There is 1 result: 46"
+(clj-format nil
+  ["There " [:choose {:default "are"} "are" "is"] :back
+   " " :int " result" [:plural {:rewind true}] ": "
+   [:each {:sep ", "} :int]]
+  n results)
+```
+
+### Tabular status board with `:justify`
+```clojure
+;; cl-format:
+;; ~36<Task~;Owner~;State~>~%~{~36<~A~;~A~;~A~>~%~}
+
+(clj-format nil
+  [[:justify {:width 36} "Task" "Owner" "State"] :nl
+   [:each
+    [:justify {:width 36} :str :str :str] :nl]]
+  ["Parser port" "Dan" "done"
+   "CLJS parity" "Dan" "green"])
+;; =>
+;; Task           Owner           State
+;; Parser port         Dan         done
+;; CLJS parity         Dan        green
+```
+
+### Tabular numeric report with tabs
+```clojure
+;; cl-format:
+;; ~A~16T~A~28T~A~46T~A~%~14,,,'-A~16T~10,,,'-A~28T~16,,,'-A~46T~5,,,'-A~%~:{~A~16T~6,2F~28T~V~~46T~:*~D~%~}
+
+(clj-format nil
+  ["Name" [:tab {:col 16}] "Value" [:tab {:col 28}] "Histogram" [:tab {:col 46}] "Count" :nl
+   [:str {:width 14 :fill \-}] [:tab {:col 16}]
+   [:str {:width 10 :fill \-}] [:tab {:col 28}]
+   [:str {:width 16 :fill \-}] [:tab {:col 46}]
+   [:str {:width 5 :fill \-}] :nl
+   [:each {:from :sublists}
+    :str [:tab {:col 16}]
+    [:float {:width 6 :decimals 2}] [:tab {:col 28}]
+    [:tilde {:count :V}] [:tab {:col 46}]
+    :back :int :nl]]
+  "" "" "" ""
+  [["Alpha" 3.14 5]
+   ["Beta" 12.0 2]
+   ["Gamma" 98.5 9]
+   ["Delta" 42.42 7]])
+;; =>
+;; Name            Value       Histogram         Count
+;; --------------  ----------  ----------------  -----
+;; Alpha             3.14      ~~~~~             5
+;; Beta             12.00      ~~                2
+;; Gamma            98.50      ~~~~~~~~~         9
+;; Delta            42.42      ~~~~~~~           7
+```
+
+### Wrapped notation with `:logical-block`
+```clojure
+;; cl-format:
+;; ~<rgb(~;~D, ~D, ~D~;)~:>
+
+(clj-format nil
+  [[:logical-block "rgb(" [:int ", " :int ", " :int] ")"]]
+  [255 140 0])
+;; => "rgb(255, 140, 0)"
+```
+
+### Word-wrapped prose
+```clojure
+;; cl-format:
+;; ~%~%~{~<~%~0,20:;~a ~>~}
+
+(clj-format nil
+  [:nl :nl
+   [:each
+    [:justify :nl
+     [:clause {:width 0 :pad-step 20 :pad-before true}
+      :str " "]]]]
+  ["The" "power" "of" "FORMAT" "is"
+   "that" "it" "can" "wrap" "words"
+   "beautifully."])
+;; =>
+;;
+;; The power of FORMAT
+;; is that it can wrap
+;; words beautifully.
+```
+
+### XML tag formatter
+```clojure
+(clj-format nil
+  ["<" :str [:each :stop " " :str "=\"" :str "\""] [:if "/" nil] ">" :nl]
+  "img" ["src" "cat.jpg" "alt" "cat"] true)
+;; => "<img src=\"cat.jpg\" alt=\"cat\"/>\n"
+```
+
+### Lowercase Roman numerals
+```clojure
+(clj-format nil [:roman {:case :downcase}] 42)
+;; => "xlii"
+```
 
 ## API
 
