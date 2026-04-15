@@ -26,8 +26,20 @@ clj-format lets you write the same thing as a Clojure data structure:
 When given a string, clj-format passes it directly to host `cl-format` —
 full backward compatibility, zero migration cost.
 
-See [50+ side-by-side examples](doc/examples.md) from Practical Common
-Lisp, CLtL2, and the CL HyperSpec.
+Documentation:
+
+- [**Examples**](doc/examples.md) — 50+ side-by-side comparisons of
+  cl-format strings and their clj-format DSL equivalents, drawn from
+  Practical Common Lisp, CLtL2, ClojureDocs, and the CL HyperSpec.
+- [**DSL reference**](doc/dsl.md) — complete definition of every clj-format
+  directive, option, and compound form. Covers all 33 cl-format directives.
+- [**Extensions**](doc/extensions.md) — how to write your own DSL directives
+  using the `*dsl-preprocessor*` hook, with `clj-format.figlet` as the
+  worked example.
+- [**Reference papers**](doc/papers/) — archived source material on
+  `cl-format` itself: CLtL2 chapter 22.3, the CL HyperSpec, Practical
+  Common Lisp ch. 18, Successful Lisp ch. 24, the HexstreamSoft reference,
+  the ClojureDocs page, and the `clojure.pprint/cl-format` docs.
 
 ## Quick Start
 
