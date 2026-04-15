@@ -27,8 +27,6 @@ full backward compatibility, zero migration cost.
 
 See [50+ side-by-side examples](doc/examples.md) from Practical Common
 Lisp, CLtL2, and the CL HyperSpec.
-See [One Tree, Many Forests: our conceptual architecture](doc/concept/concept.md)
-for the project model and design constraints.
 
 ## Quick Start
 
