@@ -79,7 +79,8 @@
 (defn- parse-params
   "Parse comma-separated directive parameters after a tilde.
    Parameters may be integers, 'char literals, V (arg value), # (arg count),
-   or omitted (nil). Returns [param-vec end-pos]."
+   or omitted (nil — e.g. `~,3D` has nil as its first parameter and 3 as
+   its second). Returns [param-vec end-pos]."
   [s pos]
   (let [[first-val first-end] (or (parse-one-param s pos)
                                   (when (= (char-at s pos) \,)
@@ -177,13 +178,20 @@
     (into [:clause opts] body-elements)
     (inline-clause body-elements)))
 
+(defn- justify-flag-opts
+  "Translate `:justify` colon/at flags into semantic `:pad-before` /
+   `:pad-after` options. Shared between the outer `~<...~>` directive
+   and its `~;` clause-local separators."
+  [flags]
+  (cond-> {}
+    (:colon flags) (assoc :pad-before true)
+    (:at flags)    (assoc :pad-after true)))
+
 (defn- justify-separator-opts
   "Translate raw ~; params/flags inside ~<...~> into named clause opts."
   [params flags]
   (merge (d/positional->named [:width :pad-step :min-pad :fill] params)
-         (cond-> {}
-           (:colon flags) (assoc :pad-before true)
-           (:at flags)    (assoc :pad-after true))))
+         (justify-flag-opts flags)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -229,35 +237,36 @@
   "Parse ~[...~;...~] as numeric dispatch."
   [s pos param-opts]
   (loop [pos pos, clauses []]
-    (let [[elements pos term-char _term-params term-flags] (parse-body s pos #{\] \;})]
+    (let [{:keys [elements end-pos term-char term-flags]} (parse-body s pos #{\] \;})]
       (if (= term-char \;)
         (if (:colon term-flags)
-          (let [[default end-pos _ _ _] (parse-body s pos #{\]})]
+          (let [default (parse-body s end-pos #{\]})]
             [(make-compound :choose
-               (assoc-some param-opts :default (inline-clause default))
+               (assoc-some param-opts :default (inline-clause (:elements default)))
                (conj clauses (inline-clause elements)))
-             end-pos])
-          (recur pos (conj clauses (inline-clause elements))))
+             (:end-pos default)])
+          (recur end-pos (conj clauses (inline-clause elements))))
         [(make-compound :choose param-opts (conj clauses (inline-clause elements)))
-         pos]))))
+         end-pos]))))
 
 (defn- parse-if
   "Parse ~:[false~;true~] — reverses clause order to true-first."
   [s pos]
-  (let [[false-body pos _ _ _] (parse-body s pos #{\] \;})
-        [true-body  pos _ _ _] (parse-body s pos #{\]})]
-    [(into [:if] (mapv inline-clause [true-body false-body])) pos]))
+  (let [false-body (parse-body s pos                 #{\] \;})
+        true-body  (parse-body s (:end-pos false-body) #{\]})]
+    [(into [:if] (mapv #(inline-clause (:elements %)) [true-body false-body]))
+     (:end-pos true-body)]))
 
 (defn- parse-when
   "Parse ~@[body~] as truthiness guard."
   [s pos]
-  (let [[body pos _ _ _] (parse-body s pos #{\]})]
-    [(make-compound :when {} body) pos]))
+  (let [{:keys [elements end-pos]} (parse-body s pos #{\]})]
+    [(make-compound :when {} elements) end-pos]))
 
 (defn- parse-each
   "Parse ~{...~} as iteration."
   [s pos open-flags open-params]
-  (let [[elements pos _ _ term-flags] (parse-body s pos #{\}})
+  (let [{:keys [elements end-pos term-flags]} (parse-body s pos #{\}})
         [elements sep] (detect-sep elements)
         opts (cond-> {}
                sep                   (assoc :sep sep)
@@ -267,40 +276,39 @@
                              :rest-sublists :sublists :rest nil)]
                (assoc opts :from from)
                opts)]
-    [(make-compound :each opts elements) pos]))
+    [(make-compound :each opts elements) end-pos]))
 
 (defn- parse-case-conversion
   "Parse ~(...~). Flattens to a :case option when the body is a single
    element; falls back to compound form for multi-element bodies."
   [s pos open-flags]
-  (let [[elements pos _ _ _] (parse-body s pos #{\)})
+  (let [{:keys [elements end-pos]} (parse-body s pos #{\)})
         mode (colon-at-dispatch open-flags :upcase :capitalize :titlecase :downcase)
         merged (when (= 1 (count elements))
                  (merge-case-into (first elements) mode))]
-    [(or merged (make-compound mode {} elements)) pos]))
+    [(or merged (make-compound mode {} elements)) end-pos]))
 
 (defn- parse-justification
   "Parse ~<...~;...~> as justification or logical block."
   [s pos open-params open-flags]
   (loop [pos pos, clauses [], pending-clause-opts nil]
-    (let [[elements pos term-char term-params term-flags] (parse-body s pos #{\> \;})
+    (let [{:keys [elements end-pos term-char term-params term-flags]}
+          (parse-body s pos #{\> \;})
           clause (wrap-clause elements pending-clause-opts)]
       (if (= term-char \;)
-        (recur pos
+        (recur end-pos
                (conj clauses clause)
                (justify-separator-opts term-params term-flags))
         (let [all-clauses (conj clauses clause)
-              logical?    (:colon term-flags)
-              kw          (if logical? :logical-block :justify)
-              named       (d/positional->named
-                            (if logical? [] [:width :pad-step :min-pad :fill])
-                            open-params)
-              flag-opts   (if logical?
-                            (cond-> {} (:colon open-flags) (assoc :colon true))
-                            (cond-> {}
-                              (:colon open-flags) (assoc :pad-before true)
-                              (:at open-flags)    (assoc :pad-after true)))]
-          [(make-compound kw (merge named flag-opts) all-clauses) pos])))))
+              [kw named flag-opts]
+              (if (:colon term-flags)
+                [:logical-block
+                 {}
+                 (cond-> {} (:colon open-flags) (assoc :colon true))]
+                [:justify
+                 (d/positional->named [:width :pad-step :min-pad :fill] open-params)
+                 (justify-flag-opts open-flags)])]
+          [(make-compound kw (merge named flag-opts) all-clauses) end-pos])))))
 
 (defn- parse-compound
   "Parse a compound directive. Returns [dsl-form end-pos]."
@@ -319,58 +327,70 @@
    Returns [dsl-form end-pos]. dsl-form is nil for format-string
    newlines that produce no output (plain ~\\n and ~:\\n)."
   [s pos]
-  (let [{:keys [params flags char char-pos next-pos]} (scan-directive-head s pos)
-        c char
-        pos next-pos]
+  (let [{:keys [params flags char-pos next-pos] dchar :char}
+        (scan-directive-head s pos)]
     (cond
-      (#{\[ \{ \( \<} c)
-      (parse-compound s pos c params flags)
+      (#{\[ \{ \( \<} dchar)
+      (parse-compound s next-pos dchar params flags)
 
       ;; Tilde-newline: plain/colon produce no output, at emits newline.
       ;; Plain and at consume trailing whitespace; colon preserves it.
-      (= c \newline)
-      (let [pos (if (:colon flags) pos (skip-whitespace s pos))]
-        (if (:at flags) [:nl pos] [nil pos]))
+      (= dchar \newline)
+      (let [after (if (:colon flags) next-pos (skip-whitespace s next-pos))]
+        (if (:at flags) [:nl after] [nil after]))
 
       :else
-      (let [uc (first (str/upper-case (str c)))]
+      (let [uc (first (str/upper-case (str dchar)))]
         (cond
           (d/+special-chars+ uc)
-          [(d/parse-special uc params flags) pos]
+          [(d/parse-special uc params flags) next-pos]
 
           :else
           (if-let [config (get d/+char->simple+ uc)]
-            [(build-simple-directive config params flags) pos]
+            [(build-simple-directive config params flags) next-pos]
             (throw (err/parse-error
-                     (str "Unknown directive character: " c)
+                     (str "Unknown directive character: " dchar)
                      {:kind :unknown-directive
-                      :char c
+                      :char dchar
                       :position char-pos
                       :format-string s}))))))))
+
+(defn- scan-literal-end
+  "Advance past a run of literal text, stopping at the next tilde
+   or end-of-string. Returns the end index."
+  [s pos]
+  (loop [i pos]
+    (if (and (< i (count s)) (not= (char-at s i) \~))
+      (recur (inc i))
+      i)))
 
 (defn- parse-body
   "Parse a sequence of literal text and directives until end of string
    or a terminating directive character from the terminators set.
-   Returns [elements end-pos term-char term-params term-flags]."
+
+   Returns a map with `:elements` (the parsed body vector), `:end-pos`
+   (the position just past the terminator, or EOF), and — when parsing
+   stopped on a terminator — `:term-char`, `:term-params`, and
+   `:term-flags` describing that terminator. At EOF those three keys
+   are nil. Compound directives peek at `:term-flags` to distinguish
+   shapes like `~;` vs `~:;` inside `~[...~]`."
   [s pos terminators]
   (loop [pos pos, elements []]
     (if (>= pos (count s))
-      [elements pos nil nil nil]
-      (let [c (char-at s pos)]
-        (if (= c \~)
-          ;; Peek ahead to check for terminator before full parse
-          (let [{:keys [params flags char next-pos]}
-                (scan-directive-head s (inc pos))]
-            (if (contains? terminators char)
-              [elements next-pos char params flags]
-              (let [[form end-pos] (parse-directive s (inc pos))]
-                (recur end-pos (cond-> elements form (conj form))))))
-          ;; Literal text — accumulate until next tilde or end
-          (let [end (loop [i pos]
-                      (if (and (< i (count s)) (not= (char-at s i) \~))
-                        (recur (inc i))
-                        i))]
-            (recur end (conj elements (subs s pos end)))))))))
+      {:elements elements :end-pos pos
+       :term-char nil :term-params nil :term-flags nil}
+      (if (= (char-at s pos) \~)
+        ;; Peek ahead to check for terminator before full parse
+        (let [{:keys [params flags char next-pos]}
+              (scan-directive-head s (inc pos))]
+          (if (contains? terminators char)
+            {:elements elements :end-pos next-pos
+             :term-char char :term-params params :term-flags flags}
+            (let [[form end-pos] (parse-directive s (inc pos))]
+              (recur end-pos (cond-> elements form (conj form))))))
+        ;; Literal text — accumulate until next tilde or end
+        (let [end (scan-literal-end s pos)]
+          (recur end (conj elements (subs s pos end))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -393,4 +413,4 @@
      (parse-format \"~:[no~;yes~]\")  ;=> [[:if \"yes\" \"no\"]]
      (parse-format \"~:(~A~)\")       ;=> [[:str {:case :capitalize}]]"
   [s]
-  (first (parse-body s 0 #{})))
+  (:elements (parse-body s 0 #{})))
