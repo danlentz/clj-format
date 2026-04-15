@@ -157,10 +157,6 @@ Highlights:
   banners, call `clj-figlet.core/render` yourself and pass the resulting
   string as a normal `clj-format` argument — the same way you would pass any
   other precomputed string.
-- **Caching:** string and `java.io.File` fonts are memoized so repeated
-  banners in a hot loop do not re-parse the font file. Pre-loaded font maps
-  and `Reader` values skip the cache to keep key equality cheap and to avoid
-  reusing consumed streams.
 
 The figlet extension also composes with tables: because `:format` on a
 `[:col …]` accepts any Clojure function, a row-local computed column can call

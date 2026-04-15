@@ -42,8 +42,7 @@
   normal string argument."
   (:require [clj-figlet.core  :as figlet]
             [clj-format.core  :as core]
-            [clojure.string   :as str])
-  (:import (java.io File Reader)))
+            [clojure.string   :as str]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -51,33 +50,20 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(def ^:private render-cached
-  "Memoized renderer for stable font keys.
-
-   Only safe for values whose equality is cheap and that don't mutate
-   across calls: strings (font names and paths) and File objects.
-   Pre-loaded font maps skip the cache because the font I/O they would
-   amortize has already happened, and comparing large maps as cache
-   keys is wasteful. Readers skip the cache because they are stateful
-   and can only be consumed once."
-  (memoize
-    (fn [font-key text]
-      (figlet/render font-key text))))
-
-(defn- cacheable-font?
-  "True when a font source can safely be used as a memoize key."
-  [font]
-  (or (string? font)
-      (instance? File font)))
-
 (defn- render-figlet
-  "Render body lines as a FIGlet banner using opts."
+  "Render body lines as a FIGlet banner using opts.
+
+   Delegates directly to `clj-figlet.core/render` with no caching at
+   this layer. Caching a `(font, text) -> rendered` map would be
+   unbounded in `text`, and caching `font-key -> loaded-font` here
+   would only duplicate work that belongs in clj-figlet. Callers
+   that need to amortize font I/O across many banners should call
+   `clj-figlet.core/load-font` themselves once and pass the
+   resulting font map via `:font`."
   [body opts]
   (let [font (or (:font opts) "standard")
         text (str/join "\n" body)]
-    (if (cacheable-font? font)
-      (render-cached font text)
-      (figlet/render font text))))
+    (figlet/render font text)))
 
 (defn- figlet-form?
   "True if x is a [:figlet ...] DSL form."
