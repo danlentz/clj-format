@@ -17,7 +17,11 @@
   (is (= [[:str {:width :#}]] (parse-format "~#A")))
   (is (= [[:str {:width 10 :min-pad 3}]] (parse-format "~10,,3A")))
   (is (= [[:str {:width :V :pad-step :# :min-pad 1 :fill \-}]]
-         (parse-format "~V,#,1,'-A"))))
+         (parse-format "~V,#,1,'-A")))
+  (is (= [[:money {:sign-first true}]] (parse-format "~:$")))
+  (is (= [[:stop {:arg1 0}]] (parse-format "~0^")))
+  (is (= [[:stop {:arg1 1 :arg2 2}]] (parse-format "~1,2^")))
+  (is (= [[:stop {:arg1 1 :arg2 2 :arg3 3}]] (parse-format "~1,2,3^"))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -31,6 +35,8 @@
   (is (= [[:int {:group true :sign :always}]] (parse-format "~@:D")))
   (is (= [[:str {:pad :left}]] (parse-format "~@A")))
   (is (= [[:write {:pretty true}]] (parse-format "~:W")))
+  (is (= [[:write {:full true}]] (parse-format "~@W")))
+  (is (= [[:write {:pretty true :full true}]] (parse-format "~:@W")))
   (is (= [[:tab {:col 4 :relative true}]] (parse-format "~4@T")))
   (is (= [[:plural {:rewind true :form :ies}]] (parse-format "~:@P")))
   (is (= [[:char {:name true}]] (parse-format "~:C")))
@@ -100,6 +106,8 @@
   (is (= [[:justify {:pad-before true} "a" "b"]] (parse-format "~:<a~;b~>")))
   (is (= [[:justify {:pad-after true} "a" "b"]] (parse-format "~@<a~;b~>")))
   (is (= [[:justify {:pad-before true :pad-after true} "a" "b"]] (parse-format "~:@<a~;b~>")))
+  (is (= [[:justify :nl [:clause {:width 0 :pad-step 20 :pad-before true} :str " "]]]
+         (parse-format "~<~%~0,20:;~a ~>")))
   (is (= [[:logical-block :str]] (parse-format "~<~A~:>")))
   (is (= [[:logical-block "(" :str ")"]] (parse-format "~<(~;~A~;)~:>"))))
 

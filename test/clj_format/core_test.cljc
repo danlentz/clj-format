@@ -1,10 +1,12 @@
 (ns clj-format.core-test
   "Tests the clj-format public API: string passthrough, DSL dispatch,
-   writer variants, and DSL/string equivalence."
-  (:require [clj-format.core :refer [clj-format compile-format parse-format]]
+   writer variants, DSL/string equivalence, and table dispatch."
+  (:require [clj-format.core :refer [clj-format compile-format parse-format
+                                      table-dsl]]
             [clj-format.test-support :as support]
             [#?(:clj clojure.test :cljs cljs.test) :refer [deftest is testing]]
-            [#?(:clj clojure.pprint :cljs cljs.pprint) :refer [cl-format]]))
+            [#?(:clj clojure.pprint :cljs cljs.pprint) :refer [cl-format]]
+            [clojure.string :as str]))
 
 
 (deftest exposed-helpers-test
@@ -88,3 +90,25 @@
            (clj-format nil [:roman] 42)))
     (is (= (clj-format nil "~8,'0B" 42)
            (clj-format nil [[:bin {:width 8 :fill \0}]] 42)))))
+
+
+(deftest table-dispatch-test
+  (testing "[:table ...] vectors dispatch to the table facility"
+    (let [result (clj-format nil [:table :name :age]
+                             [{:name "Alice" :age 30}])]
+      (is (string? result))
+      (is (str/includes? result "Alice"))
+      (is (str/includes? result "30"))))
+  (testing "[:table] honors the writer argument (true prints)"
+    (let [output (with-out-str
+                   (clj-format true [:table :name]
+                               [{:name "Bob"}]))]
+      (is (str/includes? output "Bob"))))
+  (testing "[:table] with nil writer returns a string"
+    (let [result (clj-format nil [:table :x] [{:x 1}])]
+      (is (string? result))))
+  (testing "table-dsl is accessible from core"
+    (let [result (table-dsl [:table :name] [{:name "X"}])]
+      (is (map? result))
+      (is (vector? (:dsl result)))
+      (is (vector? (:args result))))))

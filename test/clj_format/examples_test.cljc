@@ -33,6 +33,12 @@
   (equiv "~S" 42)
   (equiv "~S" nil))
 
+(deftest write-test
+  (equiv "~W" {:a 1 :b [2 3]})
+  (equiv "~:W" {:a 1 :b [2 3]})
+  (equiv "~@W" {:a 1 :b [2 3]})
+  (equiv "~:@W" {:a 1 :b [2 3]}))
+
 (deftest padded-test
   (equiv "~10A" "foo")
   (equiv "~10@A" "foo")
@@ -146,6 +152,10 @@
   (equiv "~$" 3.14159265)
   (equiv "~$" 100.0)
   (equiv "~$" 0.5))
+
+(deftest sign-first-monetary-test
+  (equiv "~:$" 12.345)
+  (equiv "~:$" -12.345))
 
 (deftest v-parameter-monetary-test
   (testing "Practical Common Lisp: V param supplies decimal count from arg"
@@ -281,6 +291,15 @@
     (equiv "Done.~^ ~D warning~:P.~^ ~D error~:P." 3)
     (equiv "Done.~^ ~D warning~:P.~^ ~D error~:P." 1 5)))
 
+(deftest numeric-stop-test
+  (testing "Numeric ~^ variants stop based on their parameter tests"
+    (equiv "alpha~0^ omega")
+    (equiv "alpha~1^ omega")
+    (equiv "alpha~1,1^ omega")
+    (equiv "alpha~1,2^ omega")
+    (equiv "alpha~1,2,3^ omega")
+    (equiv "alpha~2,1,3^ omega")))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Justification
@@ -358,13 +377,21 @@
             ["Beta" 12.0 2]])))
 
 (deftest word-wrapping-string-test
-  (testing "Word wrapping remains available via direct string passthrough"
+  (testing "Word wrapping now has a direct DSL representation via clause wrappers"
     (is (= "\n\nThe power of FORMAT \nis that it can wrap \nwords beautifully. "
            (fmt/clj-format nil
-                           "~%~%~{~<~%~0,20:;~a ~>~}"
+                           [:nl :nl
+                            [:each
+                             [:justify :nl
+                              [:clause {:width 0 :pad-step 20 :pad-before true}
+                               :str " "]]]]
                            ["The" "power" "of" "FORMAT" "is"
                             "that" "it" "can" "wrap" "words"
-                            "beautifully."])))))
+                            "beautifully."])))
+    (equiv "~%~%~{~<~%~0,20:;~a ~>~}"
+           ["The" "power" "of" "FORMAT" "is"
+            "that" "it" "can" "wrap" "words"
+            "beautifully."])))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

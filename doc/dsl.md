@@ -425,7 +425,15 @@ when the body contains a single element.
 [:justify {:width 10 :pad-before true
            :pad-after true} "hello"]         ;; ~10:@<hello~>  (centered)
 [:justify {:width 40} :str :int :money]      ;; ~40<~A~;~D~;~$~>
+[:justify :nl
+ [:clause {:width 0 :pad-step 20 :pad-before true}
+  :str " "]]                                 ;; ~<~%~0,20:;~A ~>
 ```
+
+When a `~;` separator inside `:justify` or `:logical-block` carries its own
+parameters or flags, the following clause is wrapped as `[:clause opts & body]`.
+Most clauses stay plain strings, keywords, or vectors; the wrapper only appears
+when separator-local behavior needs to be preserved.
 
 **`:logical-block`** — clauses define prefix, body, and suffix for the
 pretty printer.

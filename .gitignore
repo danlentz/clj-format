@@ -1,5 +1,6 @@
 /target
 /classes
+/plans
 /checkouts
 profiles.clj
 pom.xml
@@ -11,8 +12,7 @@ pom.xml.asc
 /.prepl-port
 .hgignore
 .hg/
-CLAUDE.md
-PLAN.md
 AGENTS.md
 settings.local.json
 .cpcache/
+/.claude

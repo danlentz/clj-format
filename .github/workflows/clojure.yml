@@ -36,10 +36,32 @@ jobs:
         bb: latest                    # Babashka
 
     - name: Run JVM tests
-      run: lein test
+      shell: bash
+      run: |
+        set -o pipefail
+        lein test 2>&1 | tee /tmp/jvm-out.log
+        grep -qE 'Ran [0-9]+ tests' /tmp/jvm-out.log || {
+          echo "::error::JVM suite produced no 'Ran N tests' summary — tests did not execute."
+          exit 1
+        }
 
     - name: Run CLJS tests
-      run: ./bin/test-cljs
+      shell: bash
+      run: |
+        set -o pipefail
+        ./bin/test-cljs 2>&1 | tee /tmp/cljs-out.log
+        # Guard against silent-green: require that some tests actually ran.
+        grep -qE 'Ran [0-9]+ tests' /tmp/cljs-out.log || {
+          echo "::error::CLJS suite produced no 'Ran N tests' summary — tests did not execute."
+          exit 1
+        }
 
     - name: Run Babashka smoke tests
-      run: bb test/clj_format/bb_runner.clj
+      shell: bash
+      run: |
+        set -o pipefail
+        bb test/clj_format/bb_runner.clj 2>&1 | tee /tmp/bb-out.log
+        grep -qE 'Ran [0-9]+ tests' /tmp/bb-out.log || {
+          echo "::error::Babashka suite produced no 'Ran N tests' summary — tests did not execute."
+          exit 1
+        }

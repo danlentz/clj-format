@@ -5,7 +5,8 @@
             [clj-format.examples-test]
             [clj-format.generative-test]
             [clj-format.host-parity-test]
-            [clj-format.parser-test]))
+            [clj-format.parser-test]
+            [clj-format.table-test]))
 
 (defn- exit!
   [summary]
@@ -21,4 +22,10 @@
                   'clj-format.examples-test
                   'clj-format.generative-test
                   'clj-format.host-parity-test
-                  'clj-format.parser-test))
+                  'clj-format.parser-test
+                  'clj-format.table-test))
+
+;; bin/test-cljs uses `-c` (compile-only) and then runs the output via
+;; node. cljs.nodejscli invokes *main-cli-fn* on startup, so we wire it
+;; up explicitly at load time.
+(set! *main-cli-fn* -main)
