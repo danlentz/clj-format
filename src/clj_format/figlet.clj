@@ -6,9 +6,15 @@
   `[:figlet opts? & body]` forms into their rendered multi-line
   strings before compilation.
 
-  This namespace is JVM-only. `clj-figlet` ships as a normal
-  dependency of clj-format, so nothing extra needs to be added to
-  consumer projects — just require this namespace once at startup.
+  This namespace is JVM-only and opt-in. `clj-figlet` is declared
+  with `:scope \"provided\"` in clj-format, so it is not pulled
+  transitively — consumer projects that want the `:figlet`
+  directive must add it to their own dependencies:
+
+    [com.github.danlentz/clj-figlet \"0.1.4\"]
+
+  Then require this namespace once at startup to install the
+  preprocessor.
 
   Once loaded, the directive is available through the normal
   clj-format entry point:

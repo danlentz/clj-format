@@ -146,11 +146,16 @@ Highlights:
   once at the bottom of the file. Projects that never `require`
   `clj-format.figlet` leave `*dsl-preprocessor*` at its `identity` default and
   pay nothing.
-- **Dependency:** `clj-figlet` ships as a normal dependency of clj-format on
-  all three runners (Leiningen, `deps.edn`, Babashka). There's nothing extra
-  to add to your own build — just `(require 'clj-format.figlet)` once at
-  startup to install the preprocessor. Because the namespace is lazy-loaded,
-  projects that never require it don't pay for it at runtime.
+- **Optional dependency:** `clj-figlet` is declared with `:scope "provided"`
+  in clj-format's `project.clj`, so it is not pulled transitively. Consumer
+  projects that want the `:figlet` directive add it explicitly:
+  ```clojure
+  [com.github.danlentz/clj-figlet "0.1.4"]    ; Leiningen
+  com.github.danlentz/clj-figlet {:mvn/version "0.1.4"}  ; deps.edn / bb.edn
+  ```
+  Then `(require 'clj-format.figlet)` once at startup to install the
+  preprocessor. Because the namespace is lazy-loaded, projects that never
+  require it pay nothing at runtime.
 - **Literal-string constraint:** figlet expansion happens at preprocessing
   time, before cl-format sees any arguments. The body of a `[:figlet …]` form
   must therefore be literal strings, not runtime values. For runtime-derived

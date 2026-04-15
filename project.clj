@@ -6,8 +6,9 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :signing  {:gpg-key "0CA466A1AB48F0C0264AF55307BAD70176C4B179"}
   :dependencies [[org.clojure/clojure "1.12.2" :scope "provided"]
-                 [com.github.danlentz/clj-figlet "0.1.4"]]
+                 [com.github.danlentz/clj-figlet "0.1.4" :scope "provided"]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.1"]
+                                   [com.github.danlentz/clj-figlet "0.1.4"]
                                    [clj-http "3.13.0"]
                                    [cheshire "5.13.0"]]}
              :cljs {:dependencies [[org.clojure/clojurescript "1.11.132"]]}}

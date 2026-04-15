@@ -37,15 +37,15 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
   - Worked examples in the README covering typed columns, word wrap,
     multi-line embedding (nested tables and FIGlet banners), markdown
     output, and footer aggregation.
-- **`:figlet` directive** via `clj-format.figlet` — renders FIGlet
-  ASCII-art banners using
+- **Optional `:figlet` directive** via `clj-format.figlet` — renders
+  FIGlet ASCII-art banners using
   [clj-figlet](https://github.com/danlentz/clj-figlet). Requiring the
   namespace installs an expander into the new
-  `clj-format.core/*dsl-preprocessor*` hook; the namespace is
-  lazy-loaded, so projects that never `require` it pay nothing.
-  `clj-figlet` now ships as a normal dependency of clj-format on all
-  three runners (Leiningen, `deps.edn`, Babashka) — no extra
-  dependency declaration is needed.
+  `clj-format.core/*dsl-preprocessor*` hook; the directive is inert
+  for projects that don't opt in. `clj-figlet` is declared with
+  `:scope "provided"` so it is not pulled transitively — consumers
+  that want `:figlet` add `[com.github.danlentz/clj-figlet "0.1.4"]`
+  to their own dependencies.
 - **Extension hook**: `clj-format.core/*dsl-preprocessor*` — a dynamic
   var that extension namespaces can rebind to transform DSL forms
   before compilation. Defaults to `identity`.
