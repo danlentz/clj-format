@@ -5,7 +5,7 @@ This changelog follows [keepachangelog.com](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [0.1.2-SNAPSHOT]
+## [0.1.2] - 2026-04-15
 
 ### Added
 - **Tables as a first-class DSL form** (`[:table opts? & cols]`): The

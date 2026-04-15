@@ -1,4 +1,4 @@
-(defproject com.github.danlentz/clj-format "0.1.2-SNAPSHOT"
+(defproject com.github.danlentz/clj-format "0.1.2"
   :description "A Clojure DSL for cl-format inspired by Hiccup. No dependencies. Drop-in compatibility. The power of FORMAT made easy."
   :author       "Dan Lentz"
   :url "https://github.com/danlentz/clj-format"
