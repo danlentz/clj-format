@@ -6,9 +6,9 @@
   `[:figlet opts? & body]` forms into their rendered multi-line
   strings before compilation.
 
-  This namespace is JVM-only. clj-figlet must be on the classpath:
-
-    [com.github.danlentz/clj-figlet \"0.1.4\"]
+  This namespace is JVM-only. `clj-figlet` ships as a normal
+  dependency of clj-format, so nothing extra needs to be added to
+  consumer projects — just require this namespace once at startup.
 
   Once loaded, the directive is available through the normal
   clj-format entry point:

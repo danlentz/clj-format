@@ -441,10 +441,9 @@ becomes a computed column. Every row picks its own font:
 └──────────────┴──────────────────────────────────────┘
 ```
 
-The `clj-format.figlet` extension is opt-in: add
-`[com.github.danlentz/clj-figlet "0.1.4"]` to your dependencies and
-require `clj-format.figlet` once at startup to enable it. When loaded
-it also installs a `[:figlet ...]` DSL directive for standalone
+The `clj-format.figlet` extension is shipped with clj-format — just
+`(require 'clj-format.figlet)` once at startup to enable it. When
+loaded it also installs a `[:figlet ...]` DSL directive for standalone
 banners anywhere else in the DSL.
 
 ### Markdown for docs and READMEs
