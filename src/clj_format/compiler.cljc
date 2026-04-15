@@ -81,15 +81,10 @@
   [message data]
   (throw (err/compile-error message data)))
 
-(defn- known-directive?
-  "True when `kw` is a known DSL directive or compound keyword."
-  [kw]
-  (d/known-directive-keyword? kw))
-
 (defn- validate-directive-keyword
   "Ensure `kw` names a known DSL directive."
   [kw elem]
-  (when-not (known-directive? kw)
+  (when-not (d/known-directive-keyword? kw)
     (invalid-dsl "Unknown DSL directive keyword"
                  {:kind :unknown-directive
                   :directive kw
@@ -160,7 +155,14 @@
 (defn- compile-clause
   "Compile a clause value (from :if, :choose, :justify).
    nil -> empty, string -> escaped literal, keyword -> directive,
-   vector -> directive or body."
+   vector -> directive or body.
+
+   Returns a compiled string in the common case, OR a map of the
+   form `{:separator-opts {...} :body \"...\"}` when the clause is
+   a `[:clause opts? & body]` wrapper carrying clause-local
+   separator parameters. `join-clauses` understands both shapes;
+   callers that do not support clause-local separators must go
+   through `compile-plain-clause`, which rejects the map form."
   [clause]
   (validate-clause-type clause)
   (cond
@@ -200,33 +202,38 @@
                     :clause clause})
       compiled)))
 
+(defn- separator-fragment
+  "Build a ~; clause separator with optional clause-local parameters
+   and flags (used inside :justify and :logical-block)."
+  [{:keys [width pad-step min-pad fill pad-before pad-after]}]
+  (str "~"
+       (format-params [:width :pad-step :min-pad :fill]
+                      {:width width :pad-step pad-step
+                       :min-pad min-pad :fill fill})
+       (format-raw-flags [pad-before pad-after])
+       ";"))
+
+(defn- normalize-clause
+  "Compile a clause and lift it to the `{:separator-opts :body}` shape
+   that `join-clauses` iterates over. Plain clauses get an empty
+   separator-opts map; `[:clause ...]` wrappers carry their own."
+  [clause]
+  (let [compiled (compile-clause clause)]
+    (if (map? compiled)
+      compiled
+      {:separator-opts {} :body compiled})))
+
 (defn- join-clauses
-  "Compile clauses and join with ~; separators."
+  "Compile clauses and join with ~; separators. The first clause has
+   no leading separator; every subsequent clause is preceded by one
+   built from its own clause-local separator options."
   [clauses]
-  (letfn [(separator-fragment [{:keys [width pad-step min-pad fill pad-before pad-after]}]
-            (str "~"
-                 (format-params [:width :pad-step :min-pad :fill]
-                                {:width width
-                                 :pad-step pad-step
-                                 :min-pad min-pad
-                                 :fill fill})
-                 (when pad-before ":")
-                 (when pad-after "@")
-                 ";"))
-          (normalize-clause [clause]
-            (let [compiled (compile-clause clause)]
-              (if (map? compiled)
-                compiled
-                {:separator-opts {}
-                 :body compiled})))]
-    (loop [[clause & more] (map normalize-clause clauses)
-           acc ""]
-      (if clause
-        (let [acc (str acc (:body clause))]
-          (if-let [next-clause (first more)]
-            (recur more (str acc (separator-fragment (:separator-opts next-clause))))
-            acc))
-        acc))))
+  (let [[head & tail] (map normalize-clause clauses)]
+    (str (:body head)
+         (apply str
+                (for [c tail]
+                  (str (separator-fragment (:separator-opts c))
+                       (:body c)))))))
 
 (defn- compile-simple
   "Compile a simple (non-compound) directive using shared config."
@@ -289,13 +296,13 @@
   "Compile [:justify opts? & clauses] -> ~params flags<c0~;c1~;...~>"
   [opts clauses]
   (str "~" (format-params (:params (d/compound-directive-config :justify)) opts)
-       (when (:pad-before opts) ":") (when (:pad-after opts) "@")
+       (format-raw-flags [(:pad-before opts) (:pad-after opts)])
        "<" (join-clauses clauses) "~>"))
 
 (defn- compile-logical-block
   "Compile [:logical-block opts? & clauses] -> ~flags<c0~;...~:>"
   [opts clauses]
-  (str "~" (when (:colon opts) ":")
+  (str "~" (format-raw-flags [(:colon opts) nil])
        "<" (join-clauses clauses) "~:>"))
 
 (defn- interpret-directive-form
@@ -346,10 +353,12 @@
                           :element elem}))
           (wrap-case (compile-body children) kw))
         (cond
-          (and (d/+special-keywords+ kw) (seq children)) (compile-body elem)
-          (d/+special-keywords+ kw)                      (compile-special kw opts)
-          (seq children)                                (compile-body elem)
-          (d/directive-config kw)                       (compile-simple kw opts)
+          ;; A known directive with non-option children is a body
+          ;; wrapping that directive (e.g. [:int " file"] is the
+          ;; :int directive followed by a literal).
+          (seq children)            (compile-body elem)
+          (d/+special-keywords+ kw) (compile-special kw opts)
+          (d/directive-config kw)   (compile-simple kw opts)
           :else (invalid-dsl "Unknown directive form"
                              {:kind :invalid-directive
                               :directive kw
@@ -367,9 +376,17 @@
 
 (defn- directive-vector?
   "True if v is a single directive vector (not a body of elements).
-   A vector starting with a compound keyword is always a directive.
-   A vector starting with a simple keyword is a directive if it has
-   0-1 elements or the second element is a map (options)."
+
+   The rule: if the second element is a map, the user has committed
+   to `[directive options ...]` shape, so v is a directive. Compound,
+   special, and case-wrapper keywords are always directives. Simple
+   keywords with 0-1 elements are also directives (a trivial form).
+   Everything else is ambiguous at the root level — `[:int \" file\"]`
+   reads naturally as \"integer directive followed by a literal\",
+   i.e. a body — so we default to body mode and route through
+   `compile-body`. `compile-element` also handles that shape via
+   its `(seq children) -> compile-body elem` branch, so the two
+   dispatch paths stay consistent."
   [v]
   (and (vector? v)
        (keyword? (first v))
