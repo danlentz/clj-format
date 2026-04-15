@@ -1,6 +1,7 @@
 # clj-format
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.danlentz/clj-format.svg)](https://clojars.org/com.github.danlentz/clj-format)
+[![Clojure CI](https://github.com/danlentz/clj-format/actions/workflows/clojure.yml/badge.svg)](https://github.com/danlentz/clj-format/actions/workflows/clojure.yml)
 
 A Clojure, ClojureScript, and Babashka-friendly DSL for `cl-format`.
 
@@ -166,6 +167,46 @@ Applied as a `:case` option — no extra nesting:
 [:back {:n 2}]                        ;; back up two args
 [:goto {:n 0}]                        ;; jump to arg 0
 ```
+
+## FIGlet Banners
+
+The optional `clj-format.figlet` extension adds a `[:figlet opts? & body]`
+directive that renders FIGlet ASCII-art banners anywhere in the DSL, using
+[clj-figlet](https://github.com/danlentz/clj-figlet) under the hood. It is
+opt-in: add `[com.github.danlentz/clj-figlet "0.1.4"]` to your own
+dependencies and require the namespace once at startup.
+
+```clojure
+(require 'clj-format.figlet)
+
+(fmt/clj-format true [:figlet "Hello!"])
+```
+```
+ _   _      _ _       _
+| | | | ___| | | ___ | |
+| |_| |/ _ \ | |/ _ \| |
+|  _  |  __/ | | (_) |_|
+|_| |_|\___|_|_|\___/(_)
+```
+
+```clojure
+(fmt/clj-format true [:figlet {:font "slant"} "Clojure"])
+```
+```
+   ________        _
+  / ____/ /___    (_)_  __________
+ / /   / / __ \  / / / / / ___/ _ \
+/ /___/ / /_/ / / / /_/ / /  /  __/
+\____/_/\____/_/ /\__,_/_/   \___/
+            /___/
+```
+
+Any font that [clj-figlet](https://github.com/danlentz/clj-figlet) can load —
+bundled font name, classpath resource, filesystem path, or a pre-loaded font
+map — is accepted via `:font`. Banners compose with every other DSL element:
+they can sit inside `:each`, `:if`, or a `[:col … :format …]` in a table. See
+the "Anything multi-line goes in a cell" example in the Tables section below
+for a FIGlet-per-row recipe.
 
 ## Tables
 
